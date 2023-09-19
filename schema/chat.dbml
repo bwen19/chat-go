@@ -1,0 +1,66 @@
+Project project_name {
+    database_type: 'PostgreSQL'
+    Note: 'Database for a chat application'
+}
+
+Table users as U {
+    id bigserial [pk]
+    username varchar [not null, unique]
+    hashed_password varchar [not null]
+    avatar varchar [not null]
+    nickname varchar [not null]
+    role varchar [not null]
+    room_id bigint [ref: > R.id, not null]
+    deleted boolean [not null, default: false]
+    create_at timestamptz [not null, default: `now()`]
+}
+
+Table sessions as S {
+    id uuid [pk]
+    user_id bigint [ref: > U.id, not null]
+    refresh_token varchar [not null]
+    client_ip varchar [not null]
+    user_agent varchar [not null]
+    expire_at timestamptz [not null]
+    create_at timestamptz [not null, default: `now()`]
+}
+
+Table friendships as F {
+    user_id bigint [ref: > U.id]
+    friend_id bigint [ref: > U.id]
+    room_id bigint [ref: > R.id, not null]
+    status varchar [not null]
+    create_at timestamptz [not null, default: `now()`]
+
+    indexes {
+        (user_id, friend_id) [pk]
+    }
+}
+
+Table rooms as R {
+    id bigserial [pk]
+    name varchar [not null]
+    cover varchar [not null]
+    category varchar [not null]
+    create_at timestamptz [not null, default: `now()`]
+}
+
+Table room_members as Y {
+    room_id bigint [ref: > R.id, not null]
+    member_id bigint [ref: > U.id, not null]
+    rank varchar [not null]
+    join_at timestamptz [not null, default: `now()`]
+
+    indexes {
+        (room_id, member_id) [pk]
+    }
+}
+
+Table messages as M {
+    id bigserial [pk]
+    room_id bigint [ref: > R.id, not null]
+    sender_id bigint [ref: > U.id, not null]
+    content varchar [not null]
+    kind varchar [not null]
+    send_at timestamptz [not null, default: `now()`]
+}

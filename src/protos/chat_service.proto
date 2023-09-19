@@ -1,0 +1,115 @@
+syntax = "proto3";
+package pb;
+option go_package = "gochat/pb";
+
+import "auth.proto";
+import "user.proto";
+
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+    info: {
+        title: "Go Chat API";
+        version: "0.1";
+        contact: {
+            name: "Bwen";
+            url: "https://github.com/bwen19";
+            email: "wenbinst@gmail.com";
+        };
+    };
+};
+
+service Chat {
+    // ======================== // Auth // ======================== //
+
+    rpc Login (LoginRequest) returns (LoginResponse) {
+        option (google.api.http) = {
+            post: "/api/login"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to login and get tokens";
+            summary: "Login";
+        };
+    }
+
+    rpc AutoLogin (AutoLoginRequest) returns (AutoLoginResponse) {
+        option (google.api.http) = {
+            post: "/api/auto-login"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to login automatically";
+            summary: "Login automatically";
+        };
+    }
+
+    rpc RenewToken (RenewTokenRequest) returns (RenewTokenResponse) {
+        option (google.api.http) = {
+            post: "/api/renew-token"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to renew access token";
+            summary: "Renew access token";
+        };
+    }
+
+    rpc Logout (LogoutRequest) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            post: "/api/logout"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to logout";
+            summary: "Logout";
+        };
+    }
+
+    // ======================== // User // ======================== //
+
+    rpc CreateUser (CreateUserRequest) returns (CreateUserResponse) {
+        option (google.api.http) = {
+            post: "/api/user"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to create a new user";
+            summary: "Create a new user";
+        };
+    }
+
+    rpc DeleteUser (DeleteUserRequest) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            delete: "/api/user/{user_id}"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to delete a user";
+            summary: "Delete user";
+        };
+    }
+
+    rpc ListUsers (ListUsersRequest) returns (ListUsersResponse) {
+        option (google.api.http) = {
+            get: "/api/user"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to get a list of users";
+            summary: "List users";
+        };
+    }
+
+    rpc UpdateUser (UpdateUserRequest) returns (UpdateUserResponse) {
+        option (google.api.http) = {
+            patch: "/api/user/{user_id}"
+            body: "*"
+        };
+        option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+            description: "Use this API to update user";
+            summary: "Update user";
+        };
+    }
+
+}
