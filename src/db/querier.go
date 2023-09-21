@@ -28,7 +28,8 @@ type Querier interface {
 	DeleteSessionByUser(ctx context.Context, userID int64) error
 	DeleteUser(ctx context.Context, id int64) ([]int64, error)
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
-	GetUser(ctx context.Context, username string) (User, error)
+	GetUser(ctx context.Context, id int64) (User, error)
+	GetUserByName(ctx context.Context, username string) (User, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)

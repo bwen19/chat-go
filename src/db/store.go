@@ -3,7 +3,11 @@ package db
 import (
 	"context"
 	"fmt"
+	"gochat/src/utils"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,27 +25,32 @@ type SqlStore struct {
 }
 
 // NewStore creates a new store
-func NewStore(connPool *pgxpool.Pool) Store {
-	return &SqlStore{
+func NewStore(config *utils.Config) (Store, error) {
+	err := runDatabaseMigration(config)
+	if err != nil {
+		return nil, err
+	}
+
+	connPool, err := pgxpool.New(context.Background(), config.DatabaseUrl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pgx pool")
+	}
+
+	store := &SqlStore{
 		connPool: connPool,
 		Queries:  New(connPool),
 	}
+	return store, nil
 }
 
-// ExecTx executes a function within a database transaction
-func (store *SqlStore) execTx(ctx context.Context, fn func(*Queries) error) error {
-	tx, err := store.connPool.Begin(ctx)
+func runDatabaseMigration(config *utils.Config) error {
+	migration, err := migrate.New(config.MigrationUrl, config.DatabaseUrl)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot create new migrate instance")
 	}
 
-	q := New(tx)
-	if err = fn(q); err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("tx err: %v, rb err: %v", err, rbErr)
-		}
-		return err
+	if err = migration.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrate up")
 	}
-
-	return tx.Commit(ctx)
+	return nil
 }

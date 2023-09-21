@@ -1,79 +1,155 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"gochat/src/db"
-	"gochat/src/pb"
 	"gochat/src/utils"
+	"net/http"
 
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/gin-gonic/gin"
 )
 
-func (server *Server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
-	if violations := validateLoginRequest(req); violations != nil {
-		return nil, invalidArgumentError(violations)
+// ======================== // Login // ======================== //
+
+type LoginRequest struct {
+	Username string `json:"username" binding:"required,alphanum"`
+	Password string `json:"password" binding:"required,alphanum"`
+}
+
+type LoginResponse struct {
+	User         User   `json:"user"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (s *Server) Login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(err))
+		return
 	}
 
-	user, err := server.store.GetUser(ctx, req.GetUsername())
+	user, err := s.store.GetUserByName(c, req.Username)
 	if err != nil {
 		if errors.Is(err, db.ErrRecordNotFound) {
-			return nil, status.Errorf(codes.NotFound, "user not found")
+			c.JSON(http.StatusNotFound, errorResponse(err))
+			return
 		}
-		return nil, status.Errorf(codes.Internal, "failed to find user")
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
 	}
 
-	if err = utils.CheckPassword(req.GetPassword(), user.HashedPassword); err != nil {
-		return nil, status.Errorf(codes.NotFound, "incorrect password")
+	if err = utils.CheckPassword(req.Username, user.HashedPassword); err != nil {
+		c.JSON(http.StatusUnauthorized, errorResponse(err))
+		return
 	}
 
-	accessToken, _, err := server.tokenMaker.CreateToken(
+	accessToken, _, err := s.tokenMaker.CreateToken(
 		user.ID,
-		server.config.AccessTokenDuration,
+		user.Role,
+		s.config.AccessTokenDuration,
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create access token")
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
 	}
 
-	refreshToken, refreshPayload, err := server.tokenMaker.CreateToken(
+	refreshToken, refreshPayload, err := s.tokenMaker.CreateToken(
 		user.ID,
-		server.config.RefreshTokenDuration,
+		user.Role,
+		s.config.RefreshTokenDuration,
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create refresh token")
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
 	}
 
-	mtdt := server.extractLoginInfo(ctx)
-	err = server.store.CreateSession(ctx, db.CreateSessionParams{
+	err = s.store.CreateSession(c, db.CreateSessionParams{
 		ID:           refreshPayload.ID,
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
-		ClientIp:     mtdt.ClientIp,
-		UserAgent:    mtdt.UserAgent,
+		ClientIp:     c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
 		ExpireAt:     refreshPayload.ExpireAt,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create session")
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
 	}
 
-	rsp := &pb.LoginResponse{
-		User:         convertUser(user),
+	rsp := LoginResponse{
+		User:         convertUser(&user),
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}
-	return rsp, nil
+	c.JSON(http.StatusOK, rsp)
 }
 
-func validateLoginRequest(req *pb.LoginRequest) (violations []*errdetails.BadRequest_FieldViolation) {
-	if err := utils.ValidateName(req.GetUsername(), 3, 50); err != nil {
-		violations = append(violations, fieldViolation("username", err))
+// ======================== // AutoLogin // ======================== //
+
+type AutoLoginRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+type AutoLoginResponse struct {
+	User        User   `json:"user"`
+	AccessToken string `json:"access_token"`
+}
+
+func (s *Server) AutoLogin(c *gin.Context) {
+	var req AutoLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse(err))
+		return
 	}
 
-	if err := utils.ValidateString(req.GetPassword(), 6, 50); err != nil {
-		violations = append(violations, fieldViolation("password", err))
+	payload, err := s.verifyRefreshToken(c, req.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, errorResponse(err))
+		return
 	}
 
-	return violations
+	user, err := s.store.GetUser(c, payload.UserID)
+	if err != nil {
+		if errors.Is(err, db.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, errorResponse(err))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
+	}
+
+	if user.Deleted {
+		err = errors.New("the user is not available")
+		c.JSON(http.StatusForbidden, errorResponse(err))
+		return
+	}
+
+	accessToken, _, err := s.tokenMaker.CreateToken(
+		user.ID,
+		user.Role,
+		s.config.AccessTokenDuration,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		return
+	}
+
+	rsp := &AutoLoginResponse{
+		User:        convertUser(&user),
+		AccessToken: accessToken,
+	}
+	c.JSON(http.StatusOK, rsp)
+}
+
+// ======================== // RenewToken // ======================== //
+
+func (s *Server) RenewToken(*gin.Context) {
+
+}
+
+// ======================== // Logout // ======================== //
+
+func (s *Server) Logout(*gin.Context) {
+
 }

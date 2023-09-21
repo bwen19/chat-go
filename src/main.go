@@ -4,125 +4,56 @@ import (
 	"context"
 	"gochat/src/api"
 	"gochat/src/db"
-	"gochat/src/pb"
-	_ "gochat/src/statik"
 	"gochat/src/utils"
-	"net"
+	"log"
 	"net/http"
 	"os"
-
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rakyll/statik/fs"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
-	"google.golang.org/protobuf/encoding/protojson"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
 	config, err := utils.LoadConfig(".")
 	if err != nil {
-		log.Fatal().Err(err).Msg("cannot load config")
+		log.Fatal("cannot load config: ", err)
 	}
 
-	if config.Environment == "development" {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	}
-
-	runDatabaseMigration(config)
-
-	connPool, err := pgxpool.New(context.Background(), config.DatabaseUrl)
+	store, err := db.NewStore(&config)
 	if err != nil {
-		log.Fatal().Err(err).Msg("cannot connect to db")
+		log.Fatal("failed to create store")
 	}
+	log.Println("db connected successfully")
 
-	store := db.NewStore(connPool)
-	server, err := api.NewServer(config, store)
+	server, err := api.NewServer(&config, store)
 	if err != nil {
-		log.Fatal().Err(err).Msg("cannot create server")
+		log.Fatal("cannot create api server")
 	}
 
-	go runGatewayServer(config, server)
-	runGrpcServer(config, server)
-}
+	srv := server.SetupHttpServer()
+	log.Printf("start Http server at %s", srv.Addr)
 
-func runDatabaseMigration(config utils.Config) {
-	migration, err := migrate.New(config.MigrationUrl, config.DatabaseUrl)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot create new migrate instance")
-	}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("listen: ", err)
+		}
+	}()
 
-	if err = migration.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal().Err(err).Msg("failed to run migrate up")
-	}
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("shutting down server...")
 
-	log.Info().Msg("db migrated successfully")
-}
-
-func runGrpcServer(config utils.Config, server pb.ChatServer) {
-
-	gprcLogger := grpc.UnaryInterceptor(api.GrpcLogger)
-	grpcServer := grpc.NewServer(gprcLogger)
-	pb.RegisterChatServer(grpcServer, server)
-	reflection.Register(grpcServer)
-
-	listener, err := net.Listen("tcp", config.GrpcServerAddress)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot create listener")
-	}
-
-	log.Info().Msgf("start gRPC server at %s", listener.Addr().String())
-	err = grpcServer.Serve(listener)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot start gRPC server")
-	}
-}
-
-func runGatewayServer(config utils.Config, server pb.ChatServer) {
-	jsonOption := runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
-		MarshalOptions: protojson.MarshalOptions{
-			UseProtoNames: true,
-		},
-		UnmarshalOptions: protojson.UnmarshalOptions{
-			DiscardUnknown: true,
-		},
-	})
-
-	grpcMux := runtime.NewServeMux(jsonOption)
-
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	err := pb.RegisterChatHandlerServer(ctx, grpcMux, server)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot register handler server")
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("server forced to shutdown: ", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/", grpcMux)
-
-	statikFS, err := fs.New()
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot create statik fs")
+	select {
+	case <-ctx.Done():
+		log.Println("timeout of 5 seconds.")
 	}
-
-	swaggerHandler := http.StripPrefix("/swagger/", http.FileServer(statikFS))
-	mux.Handle("/swagger/", swaggerHandler)
-
-	listener, err := net.Listen("tcp", config.HttpServerAddress)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot create listener")
-	}
-
-	log.Info().Msgf("start Http gateway server at %s", listener.Addr().String())
-	handler := api.HttpLogger(mux)
-	err = http.Serve(listener, handler)
-	if err != nil {
-		log.Fatal().Err(err).Msg("cannot start Http gateway server")
-	}
+	log.Println("server exiting")
 }

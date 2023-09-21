@@ -20,11 +20,11 @@ var (
 type Payload struct {
 	ID       uuid.UUID `json:"id"`
 	UserID   int64     `json:"user_id"`
-	IssueAt  time.Time `json:"issue_at"`
+	Role     string    `json:"role"`
 	ExpireAt time.Time `json:"expire_at"`
 }
 
-func NewPayload(userID int64, duration time.Duration) (*Payload, error) {
+func NewPayload(userID int64, role string, duration time.Duration) (*Payload, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -33,23 +33,27 @@ func NewPayload(userID int64, duration time.Duration) (*Payload, error) {
 	payload := &Payload{
 		ID:       tokenID,
 		UserID:   userID,
-		IssueAt:  time.Now(),
+		Role:     role,
 		ExpireAt: time.Now().Add(duration),
 	}
 	return payload, nil
 }
 
-func (payload *Payload) Valid() error {
+func (payload *Payload) IsExpired() error {
 	if time.Now().After(payload.ExpireAt) {
 		return ErrExpiredToken
 	}
 	return nil
 }
 
+func (payload *Payload) IsAdmin() bool {
+	return payload.Role == "admin"
+}
+
 // -------------------------------------------------------------------
 // Define of maker interface
 type TokenMaker interface {
-	CreateToken(userID int64, duration time.Duration) (string, *Payload, error)
+	CreateToken(userID int64, role string, duration time.Duration) (string, *Payload, error)
 	VerifyToken(token string) (*Payload, error)
 }
 
@@ -71,8 +75,8 @@ func NewPasetoMaker(symmetricKey string) (TokenMaker, error) {
 	return maker, nil
 }
 
-func (maker *PasetoMaker) CreateToken(userID int64, duration time.Duration) (string, *Payload, error) {
-	payload, err := NewPayload(userID, duration)
+func (maker *PasetoMaker) CreateToken(userID int64, role string, duration time.Duration) (string, *Payload, error) {
+	payload, err := NewPayload(userID, role, duration)
 	if err != nil {
 		return "", payload, err
 	}
@@ -89,7 +93,7 @@ func (maker *PasetoMaker) VerifyToken(token string) (*Payload, error) {
 		return nil, ErrInvalidToken
 	}
 
-	err = payload.Valid()
+	err = payload.IsExpired()
 	if err != nil {
 		return nil, err
 	}

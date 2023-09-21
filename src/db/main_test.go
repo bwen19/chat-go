@@ -20,9 +20,12 @@ func TestMain(m *testing.M) {
 
 	connPool, err := pgxpool.New(context.Background(), config.DatabaseUrl)
 	if err != nil {
-		log.Fatal("cannot connect to db:", err)
+		log.Fatal("failed to create pgx pool:", err)
 	}
 
-	testStore = NewStore(connPool)
+	testStore = &SqlStore{
+		connPool: connPool,
+		Queries:  New(connPool),
+	}
 	os.Exit(m.Run())
 }
