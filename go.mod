@@ -3,6 +3,7 @@ module gochat
 go 1.21.1
 
 require (
+	github.com/aead/chacha20poly1305 v0.0.0-20201124145622-1a5aba2a8b29
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-migrate/migrate/v4 v4.16.2
 	github.com/google/uuid v1.3.0
@@ -17,7 +18,6 @@ require (
 
 require (
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
-	github.com/aead/chacha20poly1305 v0.0.0-20201124145622-1a5aba2a8b29 // indirect
 	github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 // indirect
 	github.com/bytedance/sonic v1.10.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect

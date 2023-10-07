@@ -5,9 +5,14 @@ import (
 	"fmt"
 )
 
+type ExecTx interface {
+	CreateUserTx(ctx context.Context, arg CreateUserTxParams) (CreateUserTxResult, error)
+	DeleteUserTx(ctx context.Context, userID int64) error
+}
+
 // ExecTx executes a function within a database transaction
-func (store *SqlStore) execTx(ctx context.Context, fn func(*Queries) error) error {
-	tx, err := store.connPool.Begin(ctx)
+func (s *SqlStore) execTx(ctx context.Context, fn func(*Queries) error) error {
+	tx, err := s.connPool.Begin(ctx)
 	if err != nil {
 		return err
 	}

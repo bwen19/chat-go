@@ -1,7 +1,7 @@
-package api
+package ws
 
 import (
-	"bytes"
+	"gochat/src/util/token"
 	"log"
 	"time"
 
@@ -22,43 +22,53 @@ const (
 	maxMessageSize = 512
 )
 
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
-)
-
-type Client struct {
+type client struct {
 	conn *websocket.Conn
 	send chan []byte
 }
 
-func (c *Client) readPump() {
-	defer func() {
-		// c.hub.unregister <- c
-		c.conn.Close()
-	}()
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	for {
-		_, message, err := c.conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
-			break
-		}
-		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		// c.hub.broadcast <- message
+func newClient(conn *websocket.Conn, payload *token.Payload) *client {
+	return &client{
+		conn: conn,
+		send: make(chan []byte, 128),
 	}
 }
 
-func (c *Client) writePump() {
+func (c *client) readPump(srv *Server, userID int64) {
+	defer func() {
+		srv.hub.unregisterClient(userID, c)
+		close(c.send)
+		c.conn.Close()
+		log.Println("exit read")
+	}()
+
+	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
+	// Start endless read loop, waiting for messages from client
+	for {
+		msgType, message, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("unexpected close error: %v", err)
+			}
+			break
+		}
+		if msgType == websocket.TextMessage {
+			srv.handleMessage(message)
+		}
+	}
+}
+
+func (c *client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.conn.Close()
+		log.Println("exit write")
 	}()
+
 	for {
 		select {
 		case message, ok := <-c.send:
@@ -74,13 +84,6 @@ func (c *Client) writePump() {
 				return
 			}
 			w.Write(message)
-
-			// Add queued chat messages to the current websocket message.
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				w.Write(newline)
-				w.Write(<-c.send)
-			}
 
 			if err := w.Close(); err != nil {
 				return

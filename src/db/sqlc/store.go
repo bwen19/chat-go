@@ -3,7 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
-	"gochat/src/utils"
+	"gochat/src/util"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -14,8 +14,7 @@ import (
 // Store defines all functions to execute db queries and transactions
 type Store interface {
 	Querier
-	CreateUserTx(ctx context.Context, arg CreateUserTxParams) (CreateUserTxResult, error)
-	DeleteUserTx(ctx context.Context, userID int64) error
+	ExecTx
 }
 
 // SqlStore provides all functions to execute SQL queries and transactions
@@ -25,7 +24,7 @@ type SqlStore struct {
 }
 
 // NewStore creates a new store
-func NewStore(config *utils.Config) (Store, error) {
+func NewStore(config *util.Config) (Store, error) {
 	err := runDatabaseMigration(config)
 	if err != nil {
 		return nil, err
@@ -43,7 +42,7 @@ func NewStore(config *utils.Config) (Store, error) {
 	return store, nil
 }
 
-func runDatabaseMigration(config *utils.Config) error {
+func runDatabaseMigration(config *util.Config) error {
 	migration, err := migrate.New(config.MigrationUrl, config.DatabaseUrl)
 	if err != nil {
 		return fmt.Errorf("cannot create new migrate instance")

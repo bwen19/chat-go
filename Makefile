@@ -25,6 +25,7 @@ migratedown:
 	migrate -path migrations -database "$(DB_URL)" -verbose down
 
 sqlc:
+	rm -f src/db/sqlc/*.sql.go
 	sqlc generate
 
 redis:

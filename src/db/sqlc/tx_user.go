@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"gochat/src/utils"
+	"gochat/src/util"
 )
 
 const (
@@ -23,16 +23,16 @@ type CreateUserTxResult struct {
 	User User
 }
 
-func (store *SqlStore) CreateUserTx(ctx context.Context, arg CreateUserTxParams) (CreateUserTxResult, error) {
+func (s *SqlStore) CreateUserTx(c context.Context, arg CreateUserTxParams) (CreateUserTxResult, error) {
 	var result CreateUserTxResult
 
-	err := store.execTx(ctx, func(q *Queries) error {
-		hashedPassword, err := utils.HashPassword(arg.Password)
+	err := s.execTx(c, func(q *Queries) error {
+		hashedPassword, err := util.HashPassword(arg.Password)
 		if err != nil {
 			return err
 		}
 
-		room, err := q.CreateRoom(ctx, CreateRoomParams{
+		room, err := q.CreateRoom(c, CreateRoomParams{
 			Name:     defaultRoomName,
 			Cover:    defaultCover,
 			Category: personalCategory,
@@ -41,7 +41,7 @@ func (store *SqlStore) CreateUserTx(ctx context.Context, arg CreateUserTxParams)
 			return err
 		}
 
-		result.User, err = q.CreateUser(ctx, CreateUserParams{
+		result.User, err = q.CreateUser(c, CreateUserParams{
 			Username:       arg.Username,
 			HashedPassword: hashedPassword,
 			Nickname:       arg.Username,
@@ -53,7 +53,7 @@ func (store *SqlStore) CreateUserTx(ctx context.Context, arg CreateUserTxParams)
 			return err
 		}
 
-		err = q.CreateRoomMember(ctx, CreateRoomMemberParams{
+		err = q.CreateRoomMember(c, CreateRoomMemberParams{
 			RoomID:   room.ID,
 			MemberID: result.User.ID,
 			Rank:     defaultRank,
@@ -68,18 +68,18 @@ func (store *SqlStore) CreateUserTx(ctx context.Context, arg CreateUserTxParams)
 	return result, err
 }
 
-func (store *SqlStore) DeleteUserTx(ctx context.Context, userID int64) error {
-	err := store.execTx(ctx, func(q *Queries) error {
-		if err := q.DeleteSessionByUser(ctx, userID); err != nil {
+func (s *SqlStore) DeleteUserTx(c context.Context, userID int64) error {
+	err := s.execTx(c, func(q *Queries) error {
+		if err := q.DeleteSessionByUser(c, userID); err != nil {
 			return err
 		}
 
-		roomIds, err := q.DeleteFriendByUser(ctx, userID)
+		roomIds, err := q.DeleteFriendByUser(c, userID)
 		if err != nil {
 			return err
 		}
 
-		err = q.DeleteMessageByUser(ctx, DeleteMessageByUserParams{
+		err = q.DeleteMessageByUser(c, DeleteMessageByUserParams{
 			UserID:  userID,
 			RoomIds: roomIds,
 		})
@@ -87,7 +87,7 @@ func (store *SqlStore) DeleteUserTx(ctx context.Context, userID int64) error {
 			return err
 		}
 
-		err = q.DeleteMemberByUser(ctx, DeleteMemberByUserParams{
+		err = q.DeleteMemberByUser(c, DeleteMemberByUserParams{
 			UserID:  userID,
 			RoomIds: roomIds,
 		})
@@ -95,13 +95,13 @@ func (store *SqlStore) DeleteUserTx(ctx context.Context, userID int64) error {
 			return err
 		}
 
-		r2, err := q.DeleteUser(ctx, userID)
+		r2, err := q.DeleteUser(c, userID)
 		if err != nil {
 			return err
 		}
 
 		roomIds = append(roomIds, r2...)
-		if err = q.DeleteRooms(ctx, roomIds); err != nil {
+		if err = q.DeleteRooms(c, roomIds); err != nil {
 			return err
 		}
 

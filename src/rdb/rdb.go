@@ -1,16 +1,23 @@
 package rdb
 
-import "github.com/redis/go-redis/v9"
+import (
+	"gochat/src/util"
 
-type RedisDb interface {
+	"github.com/redis/go-redis/v9"
+)
+
+type Cache interface {
+	SessionCache
+	UserCache
 }
+
 type Redis struct {
 	rdb *redis.Client
 }
 
-func NewRedis(addr string) (*Redis, error) {
+func NewRedis(config *util.Config) (*Redis, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     addr,
+		Addr:     config.RedisAddress,
 		Password: "",
 		DB:       0,
 	})

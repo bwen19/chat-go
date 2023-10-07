@@ -3,36 +3,31 @@ package main
 import (
 	"context"
 	"gochat/src/api"
-	"gochat/src/db"
-	"gochat/src/utils"
+	"gochat/src/util"
+	"gochat/src/util/state"
+	"gochat/src/ws"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	config, err := utils.LoadConfig(".")
+	config, err := util.LoadConfig(".")
 	if err != nil {
-		log.Fatal("cannot load config: ", err)
+		log.Fatal("failed to load config: ", err)
 	}
 
-	store, err := db.NewStore(&config)
+	srv, err := newHttpServer(&config)
 	if err != nil {
-		log.Fatal("failed to create store")
-	}
-	log.Println("db connected successfully")
-
-	server, err := api.NewServer(&config, store)
-	if err != nil {
-		log.Fatal("cannot create api server")
+		log.Fatal("failed to create HTTP server: ", err)
 	}
 
-	srv := server.SetupHttpServer()
-	log.Printf("start Http server at %s", srv.Addr)
-
+	log.Printf("start HTTP server at %s", config.ServerAddress)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("listen: ", err)
@@ -43,17 +38,35 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("shutting down server...")
+	log.Println("signal received, starting graceful shutdown...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal("server forced to shutdown: ", err)
 	}
 
-	select {
-	case <-ctx.Done():
-		log.Println("timeout of 5 seconds.")
-	}
+	<-ctx.Done()
 	log.Println("server exiting")
+}
+
+func newHttpServer(config *util.Config) (*http.Server, error) {
+	state, err := state.NewState(config)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("initialization complete")
+
+	server := api.NewServer(state)
+	wsServer := ws.NewServer(state)
+
+	router := gin.Default()
+	server.RegisterRouter(router)
+	wsServer.RegisterRouter(router)
+
+	httpServer := &http.Server{
+		Addr:    config.ServerAddress,
+		Handler: router,
+	}
+	return httpServer, nil
 }

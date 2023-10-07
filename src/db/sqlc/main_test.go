@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"gochat/src/utils"
+	"gochat/src/util"
 	"log"
 	"os"
 	"testing"
@@ -13,15 +13,16 @@ import (
 var testStore Store
 
 func TestMain(m *testing.M) {
-	config, err := utils.LoadConfig("../..")
+	config, err := util.LoadConfig("../..")
 	if err != nil {
-		log.Fatal("cannot load config:", err)
+		log.Fatal("cannot load config: ", err)
 	}
 
 	connPool, err := pgxpool.New(context.Background(), config.DatabaseUrl)
 	if err != nil {
-		log.Fatal("failed to create pgx pool:", err)
+		log.Fatal("failed to create pgx pool: ", err)
 	}
+	defer connPool.Close()
 
 	testStore = &SqlStore{
 		connPool: connPool,

@@ -1,41 +1,41 @@
 package api
 
 import (
-	"fmt"
-	"gochat/src/db"
-	"gochat/src/utils"
-	"net/http"
+	"gochat/src/util/state"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	store      db.Store
-	config     *utils.Config
-	tokenMaker utils.TokenMaker
+	*state.State
 }
 
-func NewServer(config *utils.Config, store db.Store) (*Server, error) {
-	tokenMaker, err := utils.NewPasetoMaker(config.TokenSymmetricKey)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create token maker: %w", err)
+func NewServer(state *state.State) *Server {
+	return &Server{
+		State: state,
 	}
-
-	server := &Server{
-		store:      store,
-		config:     config,
-		tokenMaker: tokenMaker,
-	}
-	return server, nil
 }
 
-func (s *Server) SetupHttpServer() *http.Server {
-	router := s.newRouter()
+func (s *Server) RegisterRouter(router *gin.Engine) *gin.Engine {
+	api := router.Group("/api")
+	api.POST("/login", s.login)
+	api.POST("/auto-login", s.autoLogin)
+	api.POST("/renew-token", s.renewToken)
+	api.POST("/logout", s.logout)
 
-	return &http.Server{
-		Addr:    s.config.ServerAddress,
-		Handler: router,
-	}
+	auth := api.Use(s.authMiddleware())
+	auth.PATCH("/user/password", s.changePassword)
+	auth.PATCH("/user/info", s.changeUserInfo)
+	auth.DELETE("/session/:session_id", s.deleteSession)
+	auth.GET("/session", s.listSessions)
+
+	admin := auth.Use(s.adminMiddleware())
+	admin.POST("/user", s.createUser)
+	admin.DELETE("/user/:user_id", s.deleteUser)
+	admin.GET("/user", s.listUsers)
+	admin.PATCH("/user", s.updateUser)
+
+	return router
 }
 
 func errorResponse(err error) gin.H {

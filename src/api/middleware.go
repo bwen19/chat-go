@@ -2,7 +2,7 @@ package api
 
 import (
 	"errors"
-	"gochat/src/utils"
+	"gochat/src/util/token"
 	"net/http"
 	"strings"
 
@@ -16,42 +16,59 @@ const (
 )
 
 // AuthMiddleware creates a gin middleware for authorization
-func authMiddleware(tokenMaker utils.TokenMaker) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		authorizationHeader := c.GetHeader(authorizationKey)
+func (s *Server) authMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		authorizationHeader := ctx.GetHeader(authorizationKey)
 
 		if len(authorizationHeader) == 0 {
 			err := errors.New("authorization header is not provided")
-			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
 			return
 		}
 
 		fields := strings.Fields(authorizationHeader)
 		if len(fields) < 2 {
 			err := errors.New("invalid authorization header format")
-			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
 			return
 		}
 
 		authorizationType := strings.ToLower(fields[0])
 		if authorizationType != lowerBearerKey {
 			err := errors.New("unsupported authorization type")
-			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
 			return
 		}
 
 		accessToken := fields[1]
-		payload, err := tokenMaker.VerifyToken(accessToken)
+		payload, err := s.TokenMaker.VerifyToken(accessToken)
 		if err != nil {
-			if errors.Is(err, utils.ErrExpiredToken) {
-				c.AbortWithStatusJSON(http.StatusPaymentRequired, errorResponse(err))
+			if errors.Is(err, token.ErrExpiredToken) {
+				ctx.AbortWithStatusJSON(http.StatusPaymentRequired, errorResponse(err))
 				return
 			}
-			c.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
 			return
 		}
 
-		c.Set(authorizationPayloadKey, payload)
-		c.Next()
+		ctx.Set(authorizationPayloadKey, payload)
+		ctx.Next()
+	}
+}
+
+func (s *Server) adminMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+		user, err := s.GetUser(ctx, payload.UserID)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse(err))
+			return
+		}
+
+		if user.Role != "admin" {
+			err = errors.New("permission denied")
+			ctx.AbortWithStatusJSON(http.StatusForbidden, errorResponse(err))
+		}
+		ctx.Next()
 	}
 }

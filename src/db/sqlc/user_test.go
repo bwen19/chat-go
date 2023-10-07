@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"gochat/src/utils"
+	"gochat/src/util"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,8 +12,8 @@ import (
 func TestXxx(t *testing.T) {
 	oldUser := createRandomUser(t)
 
-	newName := utils.RandomString(8)
-	newNick := utils.RandomNumString(8)
+	newName := util.RandomString(8)
+	newNick := util.RandomNumString(8)
 	updatedUser, err := testStore.UpdateUser(context.Background(), UpdateUserParams{
 		ID: oldUser.User.ID,
 		Username: pgtype.Text{

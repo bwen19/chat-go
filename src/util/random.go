@@ -1,4 +1,4 @@
-package utils
+package util
 
 import (
 	"fmt"
@@ -20,28 +20,6 @@ func RandomString(n int) string {
 	for i := 0; i < n; i++ {
 		c := alphabet[rand.Intn(k)]
 		sb.WriteByte(c)
-	}
-	return sb.String()
-}
-
-func RandomEmail() string {
-	return fmt.Sprintf("%s@email.com", RandomString(6))
-}
-
-func RandomText(n int) string {
-	var sb strings.Builder
-	k := len(alphabet)
-	const space = " "
-
-	for i := 0; i < n; i++ {
-		if i > 0 {
-			sb.WriteByte(space[0])
-		}
-		ws := RandomInt(3, 12)
-		for j := 0; j < int(ws); j++ {
-			c := alphabet[rand.Intn(k)]
-			sb.WriteByte(c)
-		}
 	}
 	return sb.String()
 }

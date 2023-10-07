@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"gochat/src/utils"
+	"gochat/src/util"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,8 +10,8 @@ import (
 
 func createRandomUser(t *testing.T) CreateUserTxResult {
 	arg := CreateUserTxParams{
-		Username: utils.RandomString(6),
-		Password: utils.RandomString(6),
+		Username: util.RandomString(6),
+		Password: util.RandomString(6),
 		Role:     "admin",
 	}
 
