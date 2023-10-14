@@ -8,7 +8,6 @@ import (
 )
 
 type Config struct {
-	Environment          string        `mapstructure:"ENVIRONMENT"`
 	DatabaseUrl          string        `mapstructure:"DATABASE_URL"`
 	MigrationUrl         string        `mapstructure:"MIGRATION_URL"`
 	RedisAddress         string        `mapstructure:"REDIS_ADDRESS"`

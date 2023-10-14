@@ -21,22 +21,19 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		authorizationHeader := ctx.GetHeader(authorizationKey)
 
 		if len(authorizationHeader) == 0 {
-			err := errors.New("authorization header is not provided")
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		fields := strings.Fields(authorizationHeader)
 		if len(fields) < 2 {
-			err := errors.New("invalid authorization header format")
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		authorizationType := strings.ToLower(fields[0])
 		if authorizationType != lowerBearerKey {
-			err := errors.New("unsupported authorization type")
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
@@ -44,10 +41,10 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		payload, err := s.TokenMaker.VerifyToken(accessToken)
 		if err != nil {
 			if errors.Is(err, token.ErrExpiredToken) {
-				ctx.AbortWithStatusJSON(http.StatusPaymentRequired, errorResponse(err))
+				ctx.AbortWithStatus(http.StatusPaymentRequired)
 				return
 			}
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
@@ -59,15 +56,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 func (s *Server) adminMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+
 		user, err := s.GetUser(ctx, payload.UserID)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
 		if user.Role != "admin" {
-			err = errors.New("permission denied")
-			ctx.AbortWithStatusJSON(http.StatusForbidden, errorResponse(err))
+			ctx.AbortWithStatus(http.StatusForbidden)
 		}
 		ctx.Next()
 	}

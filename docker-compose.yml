@@ -1,26 +1,31 @@
 version: "3.9"
 services:
   postgres:
-    image: postgres:15.2-alpine3.17
+    image: postgres:15.4-alpine3.18
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=root
-      - POSTGRES_PASSWORD=s7er9tg4m
+      - POSTGRES_PASSWORD=b1ar9ltg7m
       - POSTGRES_DB=chat
 
-  server:
-    image: eruhini2022/chat-server
+  redis:
+    image: redis:7.2-alpine3.18
+
+  api:
+    # image: eruhini2022/chat-server
+    build: .
     ports:
       - "8080:8080"
     volumes:
       - /var/www/chat.eruhini.top:/public
-      # - ../frontend/public:/public
     environment:
-      - DATABASE_URL=postgres://root:s7er9tg4m@postgres:5432/chat
+      - DATABASE_URL=postgres://root:b1ar9ltg7m@postgres:5432/chat?sslmode=disable
+      - REDIS_ADDRESS=redis:6379
+      - GIN_MODE=release
     depends_on:
       - postgres
-    command: [ "/app/server" ]
+      - redis
 
 volumes:
   pgdata:

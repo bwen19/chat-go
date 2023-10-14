@@ -2,6 +2,7 @@ package api
 
 import (
 	db "gochat/src/db/sqlc"
+	"gochat/src/util"
 	"gochat/src/util/token"
 	"net/http"
 	"time"
@@ -27,7 +28,7 @@ type DeleteSessionRequest struct {
 func (s *Server) deleteSession(ctx *gin.Context) {
 	var req DeleteSessionRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -38,7 +39,7 @@ func (s *Server) deleteSession(ctx *gin.Context) {
 		UserID: authPayload.UserID,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.InternalErrorResponse(ctx)
 		return
 	}
 }
@@ -57,7 +58,7 @@ type ListSessionsResponse struct {
 func (s *Server) listSessions(ctx *gin.Context) {
 	var req ListSessionsRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -69,9 +70,31 @@ func (s *Server) listSessions(ctx *gin.Context) {
 		UserID: authPayload.UserID,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.InternalErrorResponse(ctx)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, convertListSessions(sessions))
+}
+
+func convertListSessions(sessions []db.ListSessionsRow) *ListSessionsResponse {
+	if len(sessions) == 0 {
+		return &ListSessionsResponse{}
+	}
+
+	sess := make([]*Session, 0, 5)
+	for _, session := range sessions {
+		sess = append(sess, &Session{
+			ID:        session.ID,
+			ClientIp:  session.ClientIp,
+			UserAgent: session.UserAgent,
+			ExpireAt:  session.ExpireAt,
+			CreateAt:  session.CreateAt,
+		})
+	}
+
+	return &ListSessionsResponse{
+		Total:    sessions[0].Total,
+		Sessions: sess,
+	}
 }

@@ -1,22 +1,17 @@
-FROM rust:1.69.0-slim-buster AS chef
-RUN cargo install cargo-chef --version 0.1.59 --locked
+# Build stage
+FROM golang:1.21-alpine3.18 AS builder
 WORKDIR /app
-
-FROM chef AS planner
 COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+RUN go env -w GO111MODULE=on
+RUN go env -w GOPROXY=https://goproxy.cn,direct
+RUN go build -o main ./src/main.go
 
-FROM chef AS builder
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
-# Build application
-COPY . .
-RUN cargo build --release
-
-FROM gcr.io/distroless/cc-debian11 AS runtime
+# Run stage
+FROM alpine:3.18
 WORKDIR /app
-COPY --from=builder /app/target/release/server .
-COPY app.env .env
-COPY migrations .
+COPY --from=builder /app/main .
+COPY prod.env .env
+COPY migrations ./migrations
+
 EXPOSE 8080
-CMD [ "/app/server" ]
+CMD [ "/app/main" ]

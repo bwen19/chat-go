@@ -1,4 +1,4 @@
-package state
+package core
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"gochat/src/rdb"
 	"gochat/src/util"
 	"gochat/src/util/token"
+	"log"
 )
 
 type State struct {
@@ -20,15 +21,17 @@ func NewState(config *util.Config) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
+	log.Print("connect to Postgres")
 
 	cache, err := rdb.NewRedis(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect redis: %w", err)
+		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}
+	log.Print("connect to Redis")
 
 	tokenMaker, err := token.NewPasetoMaker(config.TokenSymmetricKey)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create token maker: %w", err)
+		return nil, fmt.Errorf("failed to create token maker: %w", err)
 	}
 
 	state := &State{
@@ -37,5 +40,13 @@ func NewState(config *util.Config) (*State, error) {
 		Cache:      cache,
 		TokenMaker: tokenMaker,
 	}
+
+	state.runCron()
 	return state, nil
+}
+
+func (s *State) Close() {
+	s.saveAllMessages()
+	s.Store.Close()
+	s.Cache.Close()
 }

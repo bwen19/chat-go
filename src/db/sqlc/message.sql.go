@@ -7,21 +7,23 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const createMessage = `-- name: CreateMessage :exec
 INSERT INTO messages (
-    room_id, sender_id, content, kind
+    room_id, sender_id, content, kind, send_at
 ) VALUES (
-    $1, $2, $3, $4
+    $1, $2, $3, $4, $5
 )
 `
 
 type CreateMessageParams struct {
-	RoomID   int64  `json:"room_id"`
-	SenderID int64  `json:"sender_id"`
-	Content  string `json:"content"`
-	Kind     string `json:"kind"`
+	RoomID   int64     `json:"room_id"`
+	SenderID int64     `json:"sender_id"`
+	Content  string    `json:"content"`
+	Kind     string    `json:"kind"`
+	SendAt   time.Time `json:"send_at"`
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
@@ -30,6 +32,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.SenderID,
 		arg.Content,
 		arg.Kind,
+		arg.SendAt,
 	)
 	return err
 }

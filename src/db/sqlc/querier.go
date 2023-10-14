@@ -15,7 +15,7 @@ type Querier interface {
 	CreateMessage(ctx context.Context, arg CreateMessageParams) error
 	CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error)
 	CreateRoomMember(ctx context.Context, arg CreateRoomMemberParams) error
-	CreateSession(ctx context.Context, arg CreateSessionParams) error
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteFriend(ctx context.Context, arg DeleteFriendParams) ([]int64, error)
 	DeleteFriendByUser(ctx context.Context, id int64) ([]int64, error)
@@ -30,6 +30,7 @@ type Querier interface {
 	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
 	GetUser(ctx context.Context, id int64) (User, error)
 	GetUserByName(ctx context.Context, username string) (User, error)
+	GetUserFriends(ctx context.Context, userID int64) ([]GetUserFriendsRow, error)
 	GetUserRooms(ctx context.Context, memberID int64) ([]GetUserRoomsRow, error)
 	ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)

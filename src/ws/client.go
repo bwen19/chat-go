@@ -1,10 +1,11 @@
 package ws
 
 import (
-	"gochat/src/util/token"
-	"log"
+	"encoding/json"
+	"gochat/src/core"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
@@ -13,7 +14,7 @@ const (
 	writeWait = 10 * time.Second
 
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
+	pongWait = 20 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
@@ -23,23 +24,16 @@ const (
 )
 
 type client struct {
-	conn *websocket.Conn
-	send chan []byte
+	userID int64
+	roomID int64
+	conn   *websocket.Conn
+	send   chan []byte
 }
 
-func newClient(conn *websocket.Conn, payload *token.Payload) *client {
-	return &client{
-		conn: conn,
-		send: make(chan []byte, 128),
-	}
-}
-
-func (c *client) readPump(srv *Server, userID int64) {
+func (c *client) readPump(ctx *gin.Context, srv *Server) {
 	defer func() {
-		srv.hub.unregisterClient(userID, c)
-		close(c.send)
+		srv.hub.unregister <- c
 		c.conn.Close()
-		log.Println("exit read")
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -50,13 +44,12 @@ func (c *client) readPump(srv *Server, userID int64) {
 	for {
 		msgType, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("unexpected close error: %v", err)
-			}
 			break
 		}
 		if msgType == websocket.TextMessage {
-			srv.handleMessage(message)
+			srv.handleEvent(ctx, c, message)
+		} else if msgType == websocket.CloseMessage {
+			break
 		}
 	}
 }
@@ -66,7 +59,6 @@ func (c *client) writePump() {
 	defer func() {
 		ticker.Stop()
 		c.conn.Close()
-		log.Println("exit write")
 	}()
 
 	for {
@@ -79,13 +71,7 @@ func (c *client) writePump() {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			if err := w.Close(); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -95,4 +81,37 @@ func (c *client) writePump() {
 			}
 		}
 	}
+}
+
+func (c *client) sendMsg(action string, data any) {
+	wsEvent := WebsocketEvent{Action: action, Data: data}
+	message, err := json.Marshal(wsEvent)
+	if err != nil {
+		return
+	}
+	c.send <- message
+}
+
+// ======================== // serveWs // ======================== //
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+func (s *Server) serveWs(ctx *gin.Context, user *core.UserInfo) {
+	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	if err != nil {
+		return
+	}
+
+	client := &client{
+		userID: user.ID,
+		roomID: user.RoomID,
+		conn:   conn,
+		send:   make(chan []byte, 128),
+	}
+
+	go client.readPump(ctx, s)
+	go client.writePump()
 }

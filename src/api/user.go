@@ -1,27 +1,15 @@
 package api
 
 import (
-	"errors"
+	"gochat/src/core"
 	db "gochat/src/db/sqlc"
 	"gochat/src/util"
 	"gochat/src/util/token"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
 )
-
-type User struct {
-	ID       int64     `json:"id"`
-	Username string    `json:"username"`
-	Avatar   string    `json:"avatar"`
-	Nickname string    `json:"nickname"`
-	Role     string    `json:"role"`
-	RoomID   int64     `json:"room_id"`
-	Deleted  bool      `json:"deleted"`
-	CreateAt time.Time `json:"create_at"`
-}
 
 // ======================== // createUser // ======================== //
 
@@ -31,34 +19,28 @@ type CreateUserRequest struct {
 	Role     string `json:"role" binding:"required,oneof=admin user"`
 }
 type CreateUserResponse struct {
-	User *User `json:"user"`
+	User *core.UserInfo `json:"user"`
 }
 
-func (s *Server) createUser(c *gin.Context) {
+func (s *Server) createUser(ctx *gin.Context) {
 	var req CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, err)
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
-	res, err := s.Store.CreateUserTx(c, db.CreateUserTxParams{
+	res, err := s.Store.CreateUserTx(ctx, db.CreateUserTxParams{
 		Username: req.Username,
 		Password: req.Password,
 		Role:     req.Role,
 	})
 	if err != nil {
-		if db.ErrorCode(err) == db.UniqueViolation {
-			c.JSON(http.StatusForbidden, errorResponse(err))
-			return
-		}
-		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.UniqueViolationResponse(ctx, err)
 		return
 	}
 
-	rsp := &CreateUserResponse{
-		User: convertUser(&res.User),
-	}
-	c.JSON(http.StatusOK, rsp)
+	rsp := &CreateUserResponse{User: core.NewUserInfo(&res.User)}
+	ctx.JSON(http.StatusOK, rsp)
 }
 
 // ======================== // deleteUser // ======================== //
@@ -67,16 +49,16 @@ type DeleteUserRequest struct {
 	UserID int64 `uri:"user_id" binding:"required,min=1"`
 }
 
-func (s *Server) deleteUser(c *gin.Context) {
+func (s *Server) deleteUser(ctx *gin.Context) {
 	var req DeleteUserRequest
-	if err := c.ShouldBindUri(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err))
+	if err := ctx.ShouldBindUri(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
-	err := s.Store.DeleteUserTx(c, req.UserID)
+	err := s.Store.DeleteUserTx(ctx, req.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.InternalErrorResponse(ctx)
 		return
 	}
 }
@@ -89,27 +71,51 @@ type ListUsersRequest struct {
 }
 
 type ListUsersResponse struct {
-	Total int64   `json:"total"`
-	Users []*User `json:"users"`
+	Total int64            `json:"total"`
+	Users []*core.UserInfo `json:"users"`
 }
 
-func (s *Server) listUsers(c *gin.Context) {
+func (s *Server) listUsers(ctx *gin.Context) {
 	var req ListUsersRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err))
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
-	users, err := s.Store.ListUsers(c, db.ListUsersParams{
+	users, err := s.Store.ListUsers(ctx, db.ListUsersParams{
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.InternalErrorResponse(ctx)
 		return
 	}
 
-	c.JSON(http.StatusOK, convertListUsers(users))
+	ctx.JSON(http.StatusOK, convertListUsers(users))
+}
+
+func convertListUsers(users []db.ListUsersRow) *ListUsersResponse {
+	if len(users) == 0 {
+		return &ListUsersResponse{}
+	}
+
+	res := make([]*core.UserInfo, 0, 5)
+	for _, user := range users {
+		res = append(res, &core.UserInfo{
+			ID:       user.ID,
+			Username: user.Username,
+			Nickname: user.Nickname,
+			Avatar:   user.Avatar,
+			Role:     user.Role,
+			Deleted:  user.Deleted,
+			CreateAt: user.CreateAt,
+		})
+	}
+
+	return &ListUsersResponse{
+		Total: users[0].Total,
+		Users: res,
+	}
 }
 
 // ======================== // updateUser // ======================== //
@@ -124,13 +130,13 @@ type UpdateUserRequest struct {
 	Deleted  *bool   `json:"deleted" binding:"-"`
 }
 type UpdateUserResponse struct {
-	User *User `json:"user"`
+	User *core.UserInfo `json:"user"`
 }
 
-func (s *Server) updateUser(c *gin.Context) {
+func (s *Server) updateUser(ctx *gin.Context) {
 	var req UpdateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err))
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -141,7 +147,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.Password != nil {
 		hashedPassword, err := util.HashPassword(*req.Password)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, err)
+			ctx.JSON(http.StatusInternalServerError, err)
 			return
 		}
 		arg.HashedPassword = pgtype.Text{String: hashedPassword, Valid: true}
@@ -159,14 +165,14 @@ func (s *Server) updateUser(c *gin.Context) {
 		arg.Deleted = pgtype.Bool{Bool: *req.Deleted, Valid: true}
 	}
 
-	user, err := s.Store.UpdateUser(c, arg)
+	user, err := s.Store.UpdateUser(ctx, arg)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	rsp := &UpdateUserResponse{User: convertUser(&user)}
-	c.JSON(http.StatusOK, rsp)
+	rsp := &UpdateUserResponse{User: core.NewUserInfo(&user)}
+	ctx.JSON(http.StatusOK, rsp)
 }
 
 // ======================== // changePassword // ======================== //
@@ -176,42 +182,38 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" binding:"required,min=2,max=50"`
 }
 
-func (s *Server) changePassword(c *gin.Context) {
+func (s *Server) changePassword(ctx *gin.Context) {
 	var req ChangePasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err))
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
-	payload := c.MustGet(authorizationPayloadKey).(*token.Payload)
+	payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	user, err := s.Store.GetUser(c, payload.UserID)
+	user, err := s.Store.GetUser(ctx, payload.UserID)
 	if err != nil {
-		if errors.Is(err, db.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, errorResponse(err))
-			return
-		}
-		c.JSON(http.StatusInternalServerError, errorResponse(err))
+		util.RecordNotFoundResponse(ctx, err)
 		return
 	}
 
 	if err = util.CheckPassword(req.OldPassword, user.HashedPassword); err != nil {
-		c.JSON(http.StatusForbidden, errorResponse(err))
+		ctx.JSON(http.StatusForbidden, err.Error())
 		return
 	}
 
 	hashedPassword, err := util.HashPassword(req.NewPassword)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	_, err = s.Store.UpdateUser(c, db.UpdateUserParams{
+	_, err = s.Store.UpdateUser(ctx, db.UpdateUserParams{
 		ID:             payload.UserID,
 		HashedPassword: pgtype.Text{String: hashedPassword, Valid: true},
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 }
@@ -224,17 +226,17 @@ type ChangeUserInfoRequest struct {
 	Avatar   *string `json:"avatar" binding:"-"`
 }
 type ChangeUserInfoResponse struct {
-	User *User `json:"user"`
+	User *core.UserInfo `json:"user"`
 }
 
-func (s *Server) changeUserInfo(c *gin.Context) {
+func (s *Server) changeUserInfo(ctx *gin.Context) {
 	var req ChangeUserInfoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse(err))
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		util.InvalidArgumentResponse(ctx)
 		return
 	}
 
-	authPayload := c.MustGet(authorizationPayloadKey).(*token.Payload)
+	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
 	arg := db.UpdateUserParams{ID: authPayload.UserID}
 	if req.Username != nil {
@@ -247,12 +249,12 @@ func (s *Server) changeUserInfo(c *gin.Context) {
 		arg.Avatar = pgtype.Text{String: *req.Avatar, Valid: true}
 	}
 
-	user, err := s.Store.UpdateUser(c, arg)
+	user, err := s.Store.UpdateUser(ctx, arg)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	rsp := &UpdateUserResponse{User: convertUser(&user)}
-	c.JSON(http.StatusOK, rsp)
+	rsp := &UpdateUserResponse{User: core.NewUserInfo(&user)}
+	ctx.JSON(http.StatusOK, rsp)
 }

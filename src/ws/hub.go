@@ -1,7 +1,8 @@
 package ws
 
 import (
-	db "gochat/src/db/sqlc"
+	"encoding/json"
+	"gochat/src/core"
 	"log"
 )
 
@@ -12,7 +13,6 @@ type hub struct {
 	join      chan *client
 	left      chan *client
 	broadcast chan []byte
-	close     chan bool
 }
 
 func runNewHub() *hub {
@@ -21,28 +21,25 @@ func runNewHub() *hub {
 		join:      make(chan *client),
 		left:      make(chan *client),
 		broadcast: make(chan []byte, 128),
-		close:     make(chan bool),
 	}
 	go hub.run()
 	return hub
 }
 
 func (h *hub) run() {
-	defer func() {
-		log.Println("exit hub")
-	}()
 	for {
 		select {
 		case client := <-h.join:
 			h.clients[client] = true
 		case client := <-h.left:
 			delete(h.clients, client)
-		case message := <-h.broadcast:
+		case message, ok := <-h.broadcast:
+			if !ok {
+				return
+			}
 			for client := range h.clients {
 				client.send <- message
 			}
-		case <-h.close:
-			return
 		}
 	}
 }
@@ -54,7 +51,7 @@ type hubService struct {
 	privateHub map[int64]int64          // userID - roomID
 	userHubs   map[int64]map[int64]bool // userID - roomID - bool
 	register   chan *hubRegisterParams
-	unregister chan *hubUnregisterParams
+	unregister chan *client
 	addHub     chan int64
 	delHub     chan int64
 }
@@ -65,48 +62,59 @@ func newHubService() *hubService {
 		privateHub: make(map[int64]int64),
 		userHubs:   make(map[int64]map[int64]bool),
 		register:   make(chan *hubRegisterParams),
-		unregister: make(chan *hubUnregisterParams),
+		unregister: make(chan *client),
 		addHub:     make(chan int64),
 		delHub:     make(chan int64),
 	}
 }
 
 func (h *hubService) run() {
+	log.Print("start Hub Service")
 	for {
 		select {
 		case params := <-h.register:
-			if _, ok := h.privateHub[params.userID]; !ok {
-				h.privateHub[params.userID] = params.privateRoom
+			userID := params.client.userID
+			privateRoomID := params.client.roomID
+
+			if _, ok := h.privateHub[params.client.userID]; !ok {
+				h.privateHub[params.client.userID] = privateRoomID
 			}
-			if _, ok := h.userHubs[params.userID]; !ok {
-				roomSet := make(map[int64]bool, len(params.roomIDs))
-				for _, roomID := range params.roomIDs {
-					roomSet[roomID] = true
+
+			if _, ok := h.userHubs[userID]; !ok {
+				roomSet := make(map[int64]bool, len(params.rooms))
+				for _, room := range params.rooms {
+					roomID := room.ID
 					if _, ok := h.hubs[roomID]; !ok {
 						h.hubs[roomID] = runNewHub()
 					}
+					roomSet[roomID] = true
 				}
-				h.userHubs[params.userID] = roomSet
+				h.userHubs[userID] = roomSet
 			}
-			for _, roomID := range params.roomIDs {
+
+			for roomID := range h.userHubs[userID] {
 				h.hubs[roomID].join <- params.client
 			}
-		case params := <-h.unregister:
-			for roomID := range h.userHubs[params.userID] {
+		case client := <-h.unregister:
+			userID := client.userID
+
+			for roomID := range h.userHubs[userID] {
 				if hub, ok := h.hubs[roomID]; ok {
-					hub.left <- params.client
-					if len(hub.clients) == 0 {
-						hub.close <- true
+					if len(hub.clients) <= 1 {
+						close(hub.broadcast)
 						delete(h.hubs, roomID)
+					} else {
+						hub.left <- client
 					}
 				}
 			}
-			if privateRoomID, ok := h.privateHub[params.userID]; ok {
+			if privateRoomID, ok := h.privateHub[userID]; ok {
 				if _, ok := h.hubs[privateRoomID]; !ok {
-					delete(h.privateHub, params.userID)
-					delete(h.userHubs, params.userID)
+					delete(h.privateHub, userID)
+					delete(h.userHubs, userID)
 				}
 			}
+			close(client.send)
 		case roomID := <-h.addHub:
 			if _, ok := h.hubs[roomID]; !ok {
 				h.hubs[roomID] = runNewHub()
@@ -118,30 +126,37 @@ func (h *hubService) run() {
 }
 
 type hubRegisterParams struct {
-	userID      int64
-	privateRoom int64
-	roomIDs     []int64
-	client      *client
+	client *client
+	rooms  []*core.RoomInfo
 }
 
-func (h *hubService) registerClient(user *db.User, client *client) {
+func (h *hubService) registerClient(client *client, rooms []*core.RoomInfo) {
 	arg := &hubRegisterParams{
-		userID:      user.ID,
-		privateRoom: user.RoomID,
-		client:      client,
+		client: client,
+		rooms:  rooms,
 	}
 	h.register <- arg
 }
 
-type hubUnregisterParams struct {
-	userID int64
-	client *client
+func (h *hubService) broadcastByRoom(action string, data any, roomID int64) {
+	wsEvent := WebsocketEvent{Action: action, Data: data}
+	message, err := json.Marshal(wsEvent)
+	if err != nil {
+		return
+	}
+
+	h.hubs[roomID].broadcast <- message
 }
 
-func (h *hubService) unregisterClient(userID int64, client *client) {
-	arg := &hubUnregisterParams{
-		userID: userID,
-		client: client,
+func (h *hubService) broadcastByUsers(action string, data any, userIDs ...int64) {
+	wsEvent := WebsocketEvent{Action: action, Data: data}
+	message, err := json.Marshal(wsEvent)
+	if err != nil {
+		return
 	}
-	h.unregister <- arg
+
+	for _, userID := range userIDs {
+		roomID := h.privateHub[userID]
+		h.hubs[roomID].broadcast <- message
+	}
 }
