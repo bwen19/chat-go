@@ -3,40 +3,12 @@
 //   sqlc v1.22.0
 // source: room.sql
 
-package db
+package sqlc
 
 import (
 	"context"
 	"time"
 )
-
-const createRoom = `-- name: CreateRoom :one
-INSERT INTO rooms (
-    name, cover, category
-) VALUES (
-    $1, $2, $3
-) RETURNING
-    id, name, cover, category, create_at
-`
-
-type CreateRoomParams struct {
-	Name     string `json:"name"`
-	Cover    string `json:"cover"`
-	Category string `json:"category"`
-}
-
-func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error) {
-	row := q.db.QueryRow(ctx, createRoom, arg.Name, arg.Cover, arg.Category)
-	var i Room
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Cover,
-		&i.Category,
-		&i.CreateAt,
-	)
-	return i, err
-}
 
 const deleteRooms = `-- name: DeleteRooms :exec
 DELETE FROM rooms
@@ -48,7 +20,84 @@ func (q *Queries) DeleteRooms(ctx context.Context, roomIds []int64) error {
 	return err
 }
 
-const getUserRooms = `-- name: GetUserRooms :many
+const insertRoom = `-- name: InsertRoom :one
+INSERT INTO rooms (
+    name, cover, category
+) VALUES (
+    $1, $2, $3
+) RETURNING
+    id, name, cover, category, create_at
+`
+
+type InsertRoomParams struct {
+	Name     string `json:"name"`
+	Cover    string `json:"cover"`
+	Category string `json:"category"`
+}
+
+func (q *Queries) InsertRoom(ctx context.Context, arg *InsertRoomParams) (*Room, error) {
+	row := q.db.QueryRow(ctx, insertRoom, arg.Name, arg.Cover, arg.Category)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Cover,
+		&i.Category,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
+const retrieveFriendRooms = `-- name: RetrieveFriendRooms :many
+SELECT m.room_id, m.rank, m.join_at, r.category,
+    r.create_at, m.member_id, u.nickname, u.avatar
+FROM room_members AS m
+INNER JOIN rooms AS r ON r.id = m.room_id
+INNER JOIN users AS u ON u.id = m.member_id
+WHERE m.room_id = $1
+`
+
+type RetrieveFriendRoomsRow struct {
+	RoomID   int64     `json:"room_id"`
+	Rank     string    `json:"rank"`
+	JoinAt   time.Time `json:"join_at"`
+	Category string    `json:"category"`
+	CreateAt time.Time `json:"create_at"`
+	MemberID int64     `json:"member_id"`
+	Nickname string    `json:"nickname"`
+	Avatar   string    `json:"avatar"`
+}
+
+func (q *Queries) RetrieveFriendRooms(ctx context.Context, roomID int64) ([]*RetrieveFriendRoomsRow, error) {
+	rows, err := q.db.Query(ctx, retrieveFriendRooms, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*RetrieveFriendRoomsRow{}
+	for rows.Next() {
+		var i RetrieveFriendRoomsRow
+		if err := rows.Scan(
+			&i.RoomID,
+			&i.Rank,
+			&i.JoinAt,
+			&i.Category,
+			&i.CreateAt,
+			&i.MemberID,
+			&i.Nickname,
+			&i.Avatar,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const retrieveUserRooms = `-- name: RetrieveUserRooms :many
 WITH rooms_cte AS (
     SELECT id AS room_id, name, cover, category, create_at
     FROM rooms WHERE id IN (
@@ -66,7 +115,7 @@ FROM rooms_cte AS r,
     ) AS m
 `
 
-type GetUserRoomsRow struct {
+type RetrieveUserRoomsRow struct {
 	RoomID   int64     `json:"room_id"`
 	Name     string    `json:"name"`
 	Cover    string    `json:"cover"`
@@ -79,15 +128,15 @@ type GetUserRoomsRow struct {
 	Avatar   string    `json:"avatar"`
 }
 
-func (q *Queries) GetUserRooms(ctx context.Context, memberID int64) ([]GetUserRoomsRow, error) {
-	rows, err := q.db.Query(ctx, getUserRooms, memberID)
+func (q *Queries) RetrieveUserRooms(ctx context.Context, memberID int64) ([]*RetrieveUserRoomsRow, error) {
+	rows, err := q.db.Query(ctx, retrieveUserRooms, memberID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GetUserRoomsRow{}
+	items := []*RetrieveUserRoomsRow{}
 	for rows.Next() {
-		var i GetUserRoomsRow
+		var i RetrieveUserRoomsRow
 		if err := rows.Scan(
 			&i.RoomID,
 			&i.Name,
@@ -102,7 +151,7 @@ func (q *Queries) GetUserRooms(ctx context.Context, memberID int64) ([]GetUserRo
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

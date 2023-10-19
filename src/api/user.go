@@ -1,8 +1,8 @@
 package api
 
 import (
-	"gochat/src/core"
-	db "gochat/src/db/sqlc"
+	"gochat/src/db"
+	"gochat/src/db/sqlc"
 	"gochat/src/util"
 	"gochat/src/util/token"
 	"net/http"
@@ -19,27 +19,27 @@ type CreateUserRequest struct {
 	Role     string `json:"role" binding:"required,oneof=admin user"`
 }
 type CreateUserResponse struct {
-	User *core.UserInfo `json:"user"`
+	User *db.UserInfo `json:"user"`
 }
 
 func (s *Server) createUser(ctx *gin.Context) {
 	var req CreateUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	res, err := s.Store.CreateUserTx(ctx, db.CreateUserTxParams{
+	user, err := s.store.CreateUser(ctx, &db.CreateUserParams{
 		Username: req.Username,
 		Password: req.Password,
 		Role:     req.Role,
 	})
 	if err != nil {
-		util.UniqueViolationResponse(ctx, err)
+		UniqueViolationResponse(ctx, err)
 		return
 	}
 
-	rsp := &CreateUserResponse{User: core.NewUserInfo(&res.User)}
+	rsp := &CreateUserResponse{User: user}
 	ctx.JSON(http.StatusOK, rsp)
 }
 
@@ -52,15 +52,17 @@ type DeleteUserRequest struct {
 func (s *Server) deleteUser(ctx *gin.Context) {
 	var req DeleteUserRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	err := s.Store.DeleteUserTx(ctx, req.UserID)
+	err := s.store.RemoveUser(ctx, req.UserID)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
+
+	ctx.Status(http.StatusOK)
 }
 
 // ======================== // listUsers // ======================== //
@@ -71,51 +73,28 @@ type ListUsersRequest struct {
 }
 
 type ListUsersResponse struct {
-	Total int64            `json:"total"`
-	Users []*core.UserInfo `json:"users"`
+	Total int64          `json:"total"`
+	Users []*db.UserInfo `json:"users"`
 }
 
 func (s *Server) listUsers(ctx *gin.Context) {
 	var req ListUsersRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	users, err := s.Store.ListUsers(ctx, db.ListUsersParams{
+	total, users, err := s.store.GetUsers(ctx, &sqlc.ListUsersParams{
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 	})
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
-	ctx.JSON(http.StatusOK, convertListUsers(users))
-}
-
-func convertListUsers(users []db.ListUsersRow) *ListUsersResponse {
-	if len(users) == 0 {
-		return &ListUsersResponse{}
-	}
-
-	res := make([]*core.UserInfo, 0, 5)
-	for _, user := range users {
-		res = append(res, &core.UserInfo{
-			ID:       user.ID,
-			Username: user.Username,
-			Nickname: user.Nickname,
-			Avatar:   user.Avatar,
-			Role:     user.Role,
-			Deleted:  user.Deleted,
-			CreateAt: user.CreateAt,
-		})
-	}
-
-	return &ListUsersResponse{
-		Total: users[0].Total,
-		Users: res,
-	}
+	rsp := &ListUsersResponse{Total: total, Users: users}
+	ctx.JSON(http.StatusOK, rsp)
 }
 
 // ======================== // updateUser // ======================== //
@@ -130,17 +109,17 @@ type UpdateUserRequest struct {
 	Deleted  *bool   `json:"deleted" binding:"-"`
 }
 type UpdateUserResponse struct {
-	User *core.UserInfo `json:"user"`
+	User *db.UserInfo `json:"user"`
 }
 
 func (s *Server) updateUser(ctx *gin.Context) {
 	var req UpdateUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	arg := db.UpdateUserParams{ID: req.UserID}
+	arg := &sqlc.UpdateUserParams{ID: req.UserID}
 	if req.Username != nil {
 		arg.Username = pgtype.Text{String: *req.Username, Valid: true}
 	}
@@ -165,13 +144,13 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		arg.Deleted = pgtype.Bool{Bool: *req.Deleted, Valid: true}
 	}
 
-	user, err := s.Store.UpdateUser(ctx, arg)
+	user, err := s.store.ModifyUser(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	rsp := &UpdateUserResponse{User: core.NewUserInfo(&user)}
+	rsp := &UpdateUserResponse{User: user}
 	ctx.JSON(http.StatusOK, rsp)
 }
 
@@ -185,15 +164,15 @@ type ChangePasswordRequest struct {
 func (s *Server) changePassword(ctx *gin.Context) {
 	var req ChangePasswordRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
 	payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	user, err := s.Store.GetUser(ctx, payload.UserID)
+	user, err := s.store.RetrieveUserByID(ctx, payload.UserID)
 	if err != nil {
-		util.RecordNotFoundResponse(ctx, err)
+		RecordNotFoundResponse(ctx, err)
 		return
 	}
 
@@ -208,7 +187,7 @@ func (s *Server) changePassword(ctx *gin.Context) {
 		return
 	}
 
-	_, err = s.Store.UpdateUser(ctx, db.UpdateUserParams{
+	_, err = s.store.UpdateUser(ctx, &sqlc.UpdateUserParams{
 		ID:             payload.UserID,
 		HashedPassword: pgtype.Text{String: hashedPassword, Valid: true},
 	})
@@ -226,19 +205,19 @@ type ChangeUserInfoRequest struct {
 	Avatar   *string `json:"avatar" binding:"-"`
 }
 type ChangeUserInfoResponse struct {
-	User *core.UserInfo `json:"user"`
+	User *db.UserInfo `json:"user"`
 }
 
 func (s *Server) changeUserInfo(ctx *gin.Context) {
 	var req ChangeUserInfoRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	arg := db.UpdateUserParams{ID: authPayload.UserID}
+	arg := &sqlc.UpdateUserParams{ID: authPayload.UserID}
 	if req.Username != nil {
 		arg.Username = pgtype.Text{String: *req.Username, Valid: true}
 	}
@@ -249,12 +228,38 @@ func (s *Server) changeUserInfo(ctx *gin.Context) {
 		arg.Avatar = pgtype.Text{String: *req.Avatar, Valid: true}
 	}
 
-	user, err := s.Store.UpdateUser(ctx, arg)
+	user, err := s.store.ModifyUser(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 
-	rsp := &UpdateUserResponse{User: core.NewUserInfo(&user)}
+	rsp := &UpdateUserResponse{User: user}
+	ctx.JSON(http.StatusOK, rsp)
+}
+
+// ======================== // FindUser // ======================== //
+
+type FindUserRequest struct {
+	Username string `form:"username" binding:"required,alphanum,min=2,max=50"`
+}
+type FindUserResponse struct {
+	User *db.UserInfo `json:"user"`
+}
+
+func (s *Server) findUser(ctx *gin.Context) {
+	var req FindUserRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		InvalidArgumentResponse(ctx)
+		return
+	}
+
+	user, err := s.store.GetUserByName(ctx, req.Username)
+	if err != nil {
+		RecordNotFoundResponse(ctx, err)
+		return
+	}
+
+	rsp := &FindUserResponse{User: db.NewUserInfo(user)}
 	ctx.JSON(http.StatusOK, rsp)
 }

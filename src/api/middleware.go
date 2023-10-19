@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"gochat/src/db"
 	"gochat/src/util/token"
 	"net/http"
 	"strings"
@@ -38,10 +39,10 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 
 		accessToken := fields[1]
-		payload, err := s.TokenMaker.VerifyToken(accessToken)
+		payload, err := s.tokenMaker.VerifyToken(accessToken)
 		if err != nil {
 			if errors.Is(err, token.ErrExpiredToken) {
-				ctx.AbortWithStatus(http.StatusPaymentRequired)
+				ctx.AbortWithStatus(http.StatusNonAuthoritativeInfo)
 				return
 			}
 			ctx.AbortWithStatus(http.StatusUnauthorized)
@@ -57,13 +58,13 @@ func (s *Server) adminMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		payload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-		user, err := s.GetUser(ctx, payload.UserID)
+		user, err := s.store.GetUserByID(ctx, payload.UserID)
 		if err != nil {
 			ctx.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		if user.Role != "admin" {
+		if user.Role != db.RoleAdmin {
 			ctx.AbortWithStatus(http.StatusForbidden)
 		}
 		ctx.Next()

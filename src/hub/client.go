@@ -1,8 +1,8 @@
-package ws
+package hub
 
 import (
+	"context"
 	"encoding/json"
-	"gochat/src/core"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,16 +23,30 @@ const (
 	maxMessageSize = 512
 )
 
-type client struct {
+type ClientHandler interface {
+	Unregister(client *Client)
+	HandleEvent(ctx context.Context, client *Client, message []byte)
+}
+
+type Client struct {
 	userID int64
 	roomID int64
 	conn   *websocket.Conn
 	send   chan []byte
 }
 
-func (c *client) readPump(ctx *gin.Context, srv *Server) {
+func NewClient(userID int64, roomID int64, conn *websocket.Conn) *Client {
+	return &Client{
+		userID: userID,
+		roomID: roomID,
+		conn:   conn,
+		send:   make(chan []byte, 128),
+	}
+}
+
+func (c *Client) ReadPump(ctx *gin.Context, h ClientHandler) {
 	defer func() {
-		srv.hub.unregister <- c
+		h.Unregister(c)
 		c.conn.Close()
 	}()
 
@@ -40,21 +54,22 @@ func (c *client) readPump(ctx *gin.Context, srv *Server) {
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
-	// Start endless read loop, waiting for messages from client
+	// Start endless read loop, waiting for messages from Client
 	for {
 		msgType, message, err := c.conn.ReadMessage()
 		if err != nil {
 			break
 		}
+
 		if msgType == websocket.TextMessage {
-			srv.handleEvent(ctx, c, message)
+			h.HandleEvent(ctx, c, message)
 		} else if msgType == websocket.CloseMessage {
 			break
 		}
 	}
 }
 
-func (c *client) writePump() {
+func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -83,35 +98,14 @@ func (c *client) writePump() {
 	}
 }
 
-func (c *client) sendMsg(action string, data any) {
-	wsEvent := WebsocketEvent{Action: action, Data: data}
-	message, err := json.Marshal(wsEvent)
+func (c *Client) GetUserID() int64 {
+	return c.userID
+}
+
+func (c *Client) SendToSelf(data any) {
+	message, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
 	c.send <- message
-}
-
-// ======================== // serveWs // ======================== //
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
-func (s *Server) serveWs(ctx *gin.Context, user *core.UserInfo) {
-	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
-	if err != nil {
-		return
-	}
-
-	client := &client{
-		userID: user.ID,
-		roomID: user.RoomID,
-		conn:   conn,
-		send:   make(chan []byte, 128),
-	}
-
-	go client.readPump(ctx, s)
-	go client.writePump()
 }

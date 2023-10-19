@@ -2,7 +2,6 @@ package api
 
 import (
 	db "gochat/src/db/sqlc"
-	"gochat/src/util"
 	"gochat/src/util/token"
 	"net/http"
 	"time"
@@ -28,18 +27,15 @@ type DeleteSessionRequest struct {
 func (s *Server) deleteSession(ctx *gin.Context) {
 	var req DeleteSessionRequest
 	if err := ctx.ShouldBindUri(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	// authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	err := s.Store.DeleteSession(ctx, db.DeleteSessionParams{
-		ID:     req.SessionID,
-		UserID: authPayload.UserID,
-	})
+	err := s.store.RemoveSession(ctx, req.SessionID)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 }
@@ -58,26 +54,26 @@ type ListSessionsResponse struct {
 func (s *Server) listSessions(ctx *gin.Context) {
 	var req ListSessionsRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	sessions, err := s.Store.ListSessions(ctx, db.ListSessionsParams{
+	sessions, err := s.store.ListSessions(ctx, &db.ListSessionsParams{
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 		UserID: authPayload.UserID,
 	})
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, convertListSessions(sessions))
 }
 
-func convertListSessions(sessions []db.ListSessionsRow) *ListSessionsResponse {
+func convertListSessions(sessions []*db.ListSessionsRow) *ListSessionsResponse {
 	if len(sessions) == 0 {
 		return &ListSessionsResponse{}
 	}

@@ -3,30 +3,11 @@
 //   sqlc v1.22.0
 // source: member.sql
 
-package db
+package sqlc
 
 import (
 	"context"
 )
-
-const createRoomMember = `-- name: CreateRoomMember :exec
-INSERT INTO room_members (
-    room_id, member_id, rank
-) VALUES (
-    $1, $2, $3
-)
-`
-
-type CreateRoomMemberParams struct {
-	RoomID   int64  `json:"room_id"`
-	MemberID int64  `json:"member_id"`
-	Rank     string `json:"rank"`
-}
-
-func (q *Queries) CreateRoomMember(ctx context.Context, arg CreateRoomMemberParams) error {
-	_, err := q.db.Exec(ctx, createRoomMember, arg.RoomID, arg.MemberID, arg.Rank)
-	return err
-}
 
 const deleteMember = `-- name: DeleteMember :exec
 DELETE FROM room_members
@@ -38,7 +19,7 @@ type DeleteMemberParams struct {
 	MemberID int64 `json:"member_id"`
 }
 
-func (q *Queries) DeleteMember(ctx context.Context, arg DeleteMemberParams) error {
+func (q *Queries) DeleteMember(ctx context.Context, arg *DeleteMemberParams) error {
 	_, err := q.db.Exec(ctx, deleteMember, arg.RoomID, arg.MemberID)
 	return err
 }
@@ -65,7 +46,26 @@ type DeleteMemberByUserParams struct {
 	RoomIds []int64 `json:"room_ids"`
 }
 
-func (q *Queries) DeleteMemberByUser(ctx context.Context, arg DeleteMemberByUserParams) error {
+func (q *Queries) DeleteMemberByUser(ctx context.Context, arg *DeleteMemberByUserParams) error {
 	_, err := q.db.Exec(ctx, deleteMemberByUser, arg.UserID, arg.RoomIds)
+	return err
+}
+
+const insertRoomMember = `-- name: InsertRoomMember :exec
+INSERT INTO room_members (
+    room_id, member_id, rank
+) VALUES (
+    $1, $2, $3
+)
+`
+
+type InsertRoomMemberParams struct {
+	RoomID   int64  `json:"room_id"`
+	MemberID int64  `json:"member_id"`
+	Rank     string `json:"rank"`
+}
+
+func (q *Queries) InsertRoomMember(ctx context.Context, arg *InsertRoomMemberParams) error {
+	_, err := q.db.Exec(ctx, insertRoomMember, arg.RoomID, arg.MemberID, arg.Rank)
 	return err
 }

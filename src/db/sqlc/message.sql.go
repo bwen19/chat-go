@@ -3,39 +3,12 @@
 //   sqlc v1.22.0
 // source: message.sql
 
-package db
+package sqlc
 
 import (
 	"context"
 	"time"
 )
-
-const createMessage = `-- name: CreateMessage :exec
-INSERT INTO messages (
-    room_id, sender_id, content, kind, send_at
-) VALUES (
-    $1, $2, $3, $4, $5
-)
-`
-
-type CreateMessageParams struct {
-	RoomID   int64     `json:"room_id"`
-	SenderID int64     `json:"sender_id"`
-	Content  string    `json:"content"`
-	Kind     string    `json:"kind"`
-	SendAt   time.Time `json:"send_at"`
-}
-
-func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
-	_, err := q.db.Exec(ctx, createMessage,
-		arg.RoomID,
-		arg.SenderID,
-		arg.Content,
-		arg.Kind,
-		arg.SendAt,
-	)
-	return err
-}
 
 const deleteMessageByUser = `-- name: DeleteMessageByUser :exec
 DELETE FROM messages
@@ -49,7 +22,34 @@ type DeleteMessageByUserParams struct {
 	RoomIds []int64 `json:"room_ids"`
 }
 
-func (q *Queries) DeleteMessageByUser(ctx context.Context, arg DeleteMessageByUserParams) error {
+func (q *Queries) DeleteMessageByUser(ctx context.Context, arg *DeleteMessageByUserParams) error {
 	_, err := q.db.Exec(ctx, deleteMessageByUser, arg.UserID, arg.RoomIds)
+	return err
+}
+
+const insertMessage = `-- name: InsertMessage :exec
+INSERT INTO messages (
+    room_id, sender_id, content, kind, send_at
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+`
+
+type InsertMessageParams struct {
+	RoomID   int64     `json:"room_id"`
+	SenderID int64     `json:"sender_id"`
+	Content  string    `json:"content"`
+	Kind     string    `json:"kind"`
+	SendAt   time.Time `json:"send_at"`
+}
+
+func (q *Queries) InsertMessage(ctx context.Context, arg *InsertMessageParams) error {
+	_, err := q.db.Exec(ctx, insertMessage,
+		arg.RoomID,
+		arg.SenderID,
+		arg.Content,
+		arg.Kind,
+		arg.SendAt,
+	)
 	return err
 }

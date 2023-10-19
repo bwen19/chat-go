@@ -1,4 +1,4 @@
--- name: CreateRoom :one
+-- name: InsertRoom :one
 INSERT INTO rooms (
     name, cover, category
 ) VALUES (
@@ -10,7 +10,7 @@ INSERT INTO rooms (
 DELETE FROM rooms
 WHERE id = ANY(@room_ids::bigint[]);
 
--- name: GetUserRooms :many
+-- name: RetrieveUserRooms :many
 WITH rooms_cte AS (
     SELECT id AS room_id, name, cover, category, create_at
     FROM rooms WHERE id IN (
@@ -26,3 +26,11 @@ FROM rooms_cte AS r,
         INNER JOIN users AS u ON y.member_id = u.id
         WHERE y.room_id = r.room_id
     ) AS m;
+
+-- name: RetrieveFriendRooms :many
+SELECT m.room_id, m.rank, m.join_at, r.category,
+    r.create_at, m.member_id, u.nickname, u.avatar
+FROM room_members AS m
+INNER JOIN rooms AS r ON r.id = m.room_id
+INNER JOIN users AS u ON u.id = m.member_id
+WHERE m.room_id = $1;

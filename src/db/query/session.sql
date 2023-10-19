@@ -1,4 +1,4 @@
--- name: CreateSession :one
+-- name: InsertSession :one
 INSERT INTO sessions (
     id, user_id, refresh_token,
     client_ip, user_agent, expire_at
@@ -8,13 +8,13 @@ INSERT INTO sessions (
 
 -- name: DeleteSession :exec
 DELETE FROM sessions
-WHERE id = @id::uuid AND user_id = @user_id::bigint;
+WHERE id = @id::uuid;
 
 -- name: DeleteSessionByUser :exec
 DELETE FROM sessions
 WHERE user_id = @user_id::bigint;
 
--- name: GetSession :one
+-- name: RetrieveSession :one
 SELECT * FROM sessions
 WHERE id = @id::uuid LIMIT 1;
 

@@ -2,11 +2,9 @@ package api
 
 import (
 	"errors"
-	"gochat/src/core"
-	db "gochat/src/db/sqlc"
+	"gochat/src/db"
 	"gochat/src/util"
 	"gochat/src/util/token"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -20,32 +18,26 @@ type LoginRequest struct {
 	IsAdmin  *bool  `json:"is_admin" binding:"required"`
 }
 type LoginResponse struct {
-	User         *core.UserInfo `json:"user"`
-	AccessToken  string         `json:"access_token"`
-	RefreshToken string         `json:"refresh_token"`
+	User         *db.UserInfo `json:"user"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token"`
 }
 
 func (s *Server) login(ctx *gin.Context) {
 	var req LoginRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
-	user, err := s.Store.GetUserByName(ctx, req.Username)
+	user, err := s.store.GetUserByName(ctx, req.Username)
 	if err != nil {
-		util.RecordNotFoundResponse(ctx, err)
+		RecordNotFoundResponse(ctx, err)
 		return
 	}
 
-	if err = s.CacheUser(ctx, &user); err != nil {
-		util.InternalErrorResponse(ctx)
-		log.Println("err:", err)
-		return
-	}
-
-	if user.Deleted || (*req.IsAdmin && user.Role != "admin") {
-		util.PermissionDeniedResponse(ctx)
+	if user.Deleted || (*req.IsAdmin && user.Role != db.RoleAdmin) {
+		PermissionDeniedResponse(ctx)
 		return
 	}
 
@@ -54,25 +46,25 @@ func (s *Server) login(ctx *gin.Context) {
 		return
 	}
 
-	accessToken, _, err := s.TokenMaker.CreateToken(
+	accessToken, _, err := s.tokenMaker.CreateToken(
 		user.ID,
-		s.Config.AccessTokenDuration,
+		s.config.AccessTokenDuration,
 	)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
-	refreshToken, refreshPayload, err := s.TokenMaker.CreateToken(
+	refreshToken, refreshPayload, err := s.tokenMaker.CreateToken(
 		user.ID,
-		s.Config.RefreshTokenDuration,
+		s.config.RefreshTokenDuration,
 	)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
-	sess, err := s.Store.CreateSession(ctx, db.CreateSessionParams{
+	err = s.store.CreateSession(ctx, &db.CreateSessionParams{
 		ID:           refreshPayload.ID,
 		UserID:       user.ID,
 		RefreshToken: refreshToken,
@@ -81,18 +73,12 @@ func (s *Server) login(ctx *gin.Context) {
 		ExpireAt:     refreshPayload.ExpireAt,
 	})
 	if err != nil {
-		util.InternalErrorResponse(ctx)
-		return
-	}
-
-	if err = s.CacheSession(ctx, &sess); err != nil {
-		util.InternalErrorResponse(ctx)
-		log.Println("err:", err)
+		InternalErrorResponse(ctx)
 		return
 	}
 
 	rsp := &LoginResponse{
-		User:         core.NewUserInfo(&user),
+		User:         db.NewUserInfo(user),
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}
@@ -105,14 +91,14 @@ type AutoLoginRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 type AutoLoginResponse struct {
-	User        *core.UserInfo `json:"user"`
-	AccessToken string         `json:"access_token"`
+	User        *db.UserInfo `json:"user"`
+	AccessToken string       `json:"access_token"`
 }
 
 func (s *Server) autoLogin(ctx *gin.Context) {
 	var req AutoLoginRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -122,23 +108,23 @@ func (s *Server) autoLogin(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.GetUser(ctx, payload.UserID)
+	user, err := s.store.GetUserByID(ctx, payload.UserID)
 	if err != nil {
-		util.RecordNotFoundResponse(ctx, err)
+		RecordNotFoundResponse(ctx, err)
 		return
 	}
 
 	if user.Deleted {
-		util.PermissionDeniedResponse(ctx)
+		PermissionDeniedResponse(ctx)
 		return
 	}
 
-	accessToken, _, err := s.TokenMaker.CreateToken(
+	accessToken, _, err := s.tokenMaker.CreateToken(
 		user.ID,
-		s.Config.AccessTokenDuration,
+		s.config.AccessTokenDuration,
 	)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
@@ -161,7 +147,7 @@ type RenewTokenResponse struct {
 func (s *Server) renewToken(ctx *gin.Context) {
 	var req RenewTokenRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -171,12 +157,12 @@ func (s *Server) renewToken(ctx *gin.Context) {
 		return
 	}
 
-	accessToken, _, err := s.TokenMaker.CreateToken(
+	accessToken, _, err := s.tokenMaker.CreateToken(
 		payload.UserID,
-		s.Config.AccessTokenDuration,
+		s.config.AccessTokenDuration,
 	)
 	if err != nil {
-		util.InternalErrorResponse(ctx)
+		InternalErrorResponse(ctx)
 		return
 	}
 
@@ -195,7 +181,7 @@ type LogoutRequest struct {
 func (s *Server) logout(ctx *gin.Context) {
 	var req LogoutRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		util.InvalidArgumentResponse(ctx)
+		InvalidArgumentResponse(ctx)
 		return
 	}
 
@@ -205,31 +191,23 @@ func (s *Server) logout(ctx *gin.Context) {
 		return
 	}
 
-	err = s.Store.DeleteSession(ctx, db.DeleteSessionParams{
-		ID:     payload.ID,
-		UserID: payload.UserID,
-	})
-	if err != nil {
-		util.InternalErrorResponse(ctx)
+	if err = s.store.RemoveSession(ctx, payload.ID); err != nil {
+		InternalErrorResponse(ctx)
 		return
 	}
 
-	if err = s.DelSession(ctx, payload.ID); err != nil {
-		util.InternalErrorResponse(ctx)
-		return
-	}
-	ctx.JSON(http.StatusOK, nil)
+	ctx.Status(http.StatusOK)
 }
 
-// ======================== // utils // ======================== //
+// ======================== // verifyRefreshToken // ======================== //
 
 func (s *Server) verifyRefreshToken(ctx *gin.Context, refreshToken string) (*token.Payload, error) {
-	payload, err := s.TokenMaker.VerifyToken(refreshToken)
+	payload, err := s.tokenMaker.VerifyToken(refreshToken)
 	if err != nil {
 		return nil, err
 	}
 
-	session, err := s.GetSession(ctx, payload.ID)
+	session, err := s.store.GetSession(ctx, payload.ID)
 	if err != nil {
 		return nil, err
 	}

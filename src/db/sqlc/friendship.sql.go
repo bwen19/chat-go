@@ -3,71 +3,12 @@
 //   sqlc v1.22.0
 // source: friendship.sql
 
-package db
+package sqlc
 
 import (
 	"context"
 	"time"
 )
-
-const createFriend = `-- name: CreateFriend :exec
-INSERT INTO friendships (
-    user_id, friend_id, room_id, status
-) VALUES (
-    $1, $2, $3, $4
-)
-`
-
-type CreateFriendParams struct {
-	UserID   int64  `json:"user_id"`
-	FriendID int64  `json:"friend_id"`
-	RoomID   int64  `json:"room_id"`
-	Status   string `json:"status"`
-}
-
-func (q *Queries) CreateFriend(ctx context.Context, arg CreateFriendParams) error {
-	_, err := q.db.Exec(ctx, createFriend,
-		arg.UserID,
-		arg.FriendID,
-		arg.RoomID,
-		arg.Status,
-	)
-	return err
-}
-
-const deleteFriend = `-- name: DeleteFriend :many
-DELETE FROM friendships
-WHERE (
-    user_id = $1::bigint AND friend_id = $2::bigint
-) OR (
-    user_id = $2::bigint AND friend_id = $1::bigint
-) RETURNING room_id
-`
-
-type DeleteFriendParams struct {
-	Id1 int64 `json:"id1"`
-	Id2 int64 `json:"id2"`
-}
-
-func (q *Queries) DeleteFriend(ctx context.Context, arg DeleteFriendParams) ([]int64, error) {
-	rows, err := q.db.Query(ctx, deleteFriend, arg.Id1, arg.Id2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var room_id int64
-		if err := rows.Scan(&room_id); err != nil {
-			return nil, err
-		}
-		items = append(items, room_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
 
 const deleteFriendByUser = `-- name: DeleteFriendByUser :many
 DELETE FROM friendships
@@ -96,7 +37,40 @@ func (q *Queries) DeleteFriendByUser(ctx context.Context, id int64) ([]int64, er
 	return items, nil
 }
 
-const getUserFriends = `-- name: GetUserFriends :many
+const insertFriend = `-- name: InsertFriend :one
+INSERT INTO friendships (
+    user_id, friend_id, room_id, status
+) VALUES (
+    $1, $2, $3, $4
+) RETURNING user_id, friend_id, room_id, status, create_at
+`
+
+type InsertFriendParams struct {
+	UserID   int64  `json:"user_id"`
+	FriendID int64  `json:"friend_id"`
+	RoomID   int64  `json:"room_id"`
+	Status   string `json:"status"`
+}
+
+func (q *Queries) InsertFriend(ctx context.Context, arg *InsertFriendParams) (*Friendship, error) {
+	row := q.db.QueryRow(ctx, insertFriend,
+		arg.UserID,
+		arg.FriendID,
+		arg.RoomID,
+		arg.Status,
+	)
+	var i Friendship
+	err := row.Scan(
+		&i.UserID,
+		&i.FriendID,
+		&i.RoomID,
+		&i.Status,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
+const listUserFriends = `-- name: ListUserFriends :many
 SELECT
     f.room_id, f.status, f.create_at, u.id, u.username,
     u.nickname, u.avatar, (f.user_id = $1) AS first
@@ -112,7 +86,7 @@ INNER JOIN users AS u ON u.id = f.user_id
 WHERE f.friend_id = $1 AND status IN ('adding', 'accepted')
 `
 
-type GetUserFriendsRow struct {
+type ListUserFriendsRow struct {
 	RoomID   int64     `json:"room_id"`
 	Status   string    `json:"status"`
 	CreateAt time.Time `json:"create_at"`
@@ -123,15 +97,15 @@ type GetUserFriendsRow struct {
 	First    bool      `json:"first"`
 }
 
-func (q *Queries) GetUserFriends(ctx context.Context, userID int64) ([]GetUserFriendsRow, error) {
-	rows, err := q.db.Query(ctx, getUserFriends, userID)
+func (q *Queries) ListUserFriends(ctx context.Context, userID int64) ([]*ListUserFriendsRow, error) {
+	rows, err := q.db.Query(ctx, listUserFriends, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GetUserFriendsRow{}
+	items := []*ListUserFriendsRow{}
 	for rows.Next() {
-		var i GetUserFriendsRow
+		var i ListUserFriendsRow
 		if err := rows.Scan(
 			&i.RoomID,
 			&i.Status,
@@ -144,10 +118,134 @@ func (q *Queries) GetUserFriends(ctx context.Context, userID int64) ([]GetUserFr
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+const retrieveFriend = `-- name: RetrieveFriend :one
+SELECT user_id, friend_id, room_id, status, create_at FROM friendships
+WHERE (
+    user_id = $1::bigint AND friend_id = $2::bigint
+) OR (
+    user_id = $2::bigint AND friend_id = $1::bigint
+)
+`
+
+type RetrieveFriendParams struct {
+	UserID   int64 `json:"user_id"`
+	FriendID int64 `json:"friend_id"`
+}
+
+func (q *Queries) RetrieveFriend(ctx context.Context, arg *RetrieveFriendParams) (*Friendship, error) {
+	row := q.db.QueryRow(ctx, retrieveFriend, arg.UserID, arg.FriendID)
+	var i Friendship
+	err := row.Scan(
+		&i.UserID,
+		&i.FriendID,
+		&i.RoomID,
+		&i.Status,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
+const retrieveFriendDetail = `-- name: RetrieveFriendDetail :one
+SELECT
+    f.room_id, f.status, f.create_at, f.user_id, u1.username AS u_username,
+    u1.nickname AS u_nickname, u1.avatar AS u_avatar, f.friend_id,
+    u2.username AS f_username, u2.nickname AS f_nickname, u2.avatar AS f_avatar
+FROM friendships AS f
+INNER JOIN users AS u1 ON u1.id = f.user_id
+INNER JOIN users AS u2 ON u2.id = f.friend_id
+WHERE f.user_id = $1 AND f.friend_id = $2
+`
+
+type RetrieveFriendDetailParams struct {
+	UserID   int64 `json:"user_id"`
+	FriendID int64 `json:"friend_id"`
+}
+
+type RetrieveFriendDetailRow struct {
+	RoomID    int64     `json:"room_id"`
+	Status    string    `json:"status"`
+	CreateAt  time.Time `json:"create_at"`
+	UserID    int64     `json:"user_id"`
+	UUsername string    `json:"u_username"`
+	UNickname string    `json:"u_nickname"`
+	UAvatar   string    `json:"u_avatar"`
+	FriendID  int64     `json:"friend_id"`
+	FUsername string    `json:"f_username"`
+	FNickname string    `json:"f_nickname"`
+	FAvatar   string    `json:"f_avatar"`
+}
+
+func (q *Queries) RetrieveFriendDetail(ctx context.Context, arg *RetrieveFriendDetailParams) (*RetrieveFriendDetailRow, error) {
+	row := q.db.QueryRow(ctx, retrieveFriendDetail, arg.UserID, arg.FriendID)
+	var i RetrieveFriendDetailRow
+	err := row.Scan(
+		&i.RoomID,
+		&i.Status,
+		&i.CreateAt,
+		&i.UserID,
+		&i.UUsername,
+		&i.UNickname,
+		&i.UAvatar,
+		&i.FriendID,
+		&i.FUsername,
+		&i.FNickname,
+		&i.FAvatar,
+	)
+	return &i, err
+}
+
+const updateAddFriend = `-- name: UpdateAddFriend :one
+UPDATE friendships
+SET
+    user_id = $1::bigint,
+    friend_id = $2::bigint,
+    status = 'adding'
+WHERE (
+    user_id = $1::bigint AND friend_id = $2::bigint
+) OR (
+    user_id = $2::bigint AND friend_id = $1::bigint
+) RETURNING user_id, friend_id, room_id, status, create_at
+`
+
+type UpdateAddFriendParams struct {
+	UserID   int64 `json:"user_id"`
+	FriendID int64 `json:"friend_id"`
+}
+
+func (q *Queries) UpdateAddFriend(ctx context.Context, arg *UpdateAddFriendParams) (*Friendship, error) {
+	row := q.db.QueryRow(ctx, updateAddFriend, arg.UserID, arg.FriendID)
+	var i Friendship
+	err := row.Scan(
+		&i.UserID,
+		&i.FriendID,
+		&i.RoomID,
+		&i.Status,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
+const updateFriend = `-- name: UpdateFriend :exec
+UPDATE friendships
+SET status = $1::varchar
+WHERE user_id = $2::bigint AND friend_id = $3::bigint
+`
+
+type UpdateFriendParams struct {
+	Status   string `json:"status"`
+	UserID   int64  `json:"user_id"`
+	FriendID int64  `json:"friend_id"`
+}
+
+func (q *Queries) UpdateFriend(ctx context.Context, arg *UpdateFriendParams) error {
+	_, err := q.db.Exec(ctx, updateFriend, arg.Status, arg.UserID, arg.FriendID)
+	return err
 }

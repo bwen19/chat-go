@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"gochat/src/db/sqlc"
 	"gochat/src/util"
 	"log"
 	"os"
@@ -24,9 +25,9 @@ func TestMain(m *testing.M) {
 	}
 	defer connPool.Close()
 
-	testStore = &SqlStore{
+	testStore = &dbStore{
 		connPool: connPool,
-		Queries:  New(connPool),
+		Queries:  sqlc.New(connPool),
 	}
 	os.Exit(m.Run())
 }

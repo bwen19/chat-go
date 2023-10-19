@@ -3,7 +3,7 @@
 //   sqlc v1.22.0
 // source: user.sql
 
-package db
+package sqlc
 
 import (
 	"context"
@@ -11,48 +11,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
-
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-    username, hashed_password, nickname,
-    avatar, role, room_id
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-) RETURNING id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at
-`
-
-type CreateUserParams struct {
-	Username       string `json:"username"`
-	HashedPassword string `json:"hashed_password"`
-	Nickname       string `json:"nickname"`
-	Avatar         string `json:"avatar"`
-	Role           string `json:"role"`
-	RoomID         int64  `json:"room_id"`
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser,
-		arg.Username,
-		arg.HashedPassword,
-		arg.Nickname,
-		arg.Avatar,
-		arg.Role,
-		arg.RoomID,
-	)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.HashedPassword,
-		&i.Avatar,
-		&i.Nickname,
-		&i.Role,
-		&i.RoomID,
-		&i.Deleted,
-		&i.CreateAt,
-	)
-	return i, err
-}
 
 const deleteUser = `-- name: DeleteUser :many
 DELETE FROM users
@@ -80,35 +38,33 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) ([]int64, error) {
 	return items, nil
 }
 
-const getUser = `-- name: GetUser :one
-SELECT id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at FROM users
-WHERE id = $1 LIMIT 1
+const insertUser = `-- name: InsertUser :one
+INSERT INTO users (
+    username, hashed_password, nickname,
+    avatar, role, room_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+) RETURNING id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at
 `
 
-func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
-	row := q.db.QueryRow(ctx, getUser, id)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.HashedPassword,
-		&i.Avatar,
-		&i.Nickname,
-		&i.Role,
-		&i.RoomID,
-		&i.Deleted,
-		&i.CreateAt,
-	)
-	return i, err
+type InsertUserParams struct {
+	Username       string `json:"username"`
+	HashedPassword string `json:"hashed_password"`
+	Nickname       string `json:"nickname"`
+	Avatar         string `json:"avatar"`
+	Role           string `json:"role"`
+	RoomID         int64  `json:"room_id"`
 }
 
-const getUserByName = `-- name: GetUserByName :one
-SELECT id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at FROM users
-WHERE username = $1 LIMIT 1
-`
-
-func (q *Queries) GetUserByName(ctx context.Context, username string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByName, username)
+func (q *Queries) InsertUser(ctx context.Context, arg *InsertUserParams) (*User, error) {
+	row := q.db.QueryRow(ctx, insertUser,
+		arg.Username,
+		arg.HashedPassword,
+		arg.Nickname,
+		arg.Avatar,
+		arg.Role,
+		arg.RoomID,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -121,7 +77,7 @@ func (q *Queries) GetUserByName(ctx context.Context, username string) (User, err
 		&i.Deleted,
 		&i.CreateAt,
 	)
-	return i, err
+	return &i, err
 }
 
 const listUsers = `-- name: ListUsers :many
@@ -150,13 +106,13 @@ type ListUsersRow struct {
 	Total    int64     `json:"total"`
 }
 
-func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+func (q *Queries) ListUsers(ctx context.Context, arg *ListUsersParams) ([]*ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListUsersRow{}
+	items := []*ListUsersRow{}
 	for rows.Next() {
 		var i ListUsersRow
 		if err := rows.Scan(
@@ -171,12 +127,56 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+const retrieveUserByID = `-- name: RetrieveUserByID :one
+SELECT id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at FROM users
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) RetrieveUserByID(ctx context.Context, id int64) (*User, error) {
+	row := q.db.QueryRow(ctx, retrieveUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.HashedPassword,
+		&i.Avatar,
+		&i.Nickname,
+		&i.Role,
+		&i.RoomID,
+		&i.Deleted,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
+const retrieveUserByName = `-- name: RetrieveUserByName :one
+SELECT id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at FROM users
+WHERE username = $1 LIMIT 1
+`
+
+func (q *Queries) RetrieveUserByName(ctx context.Context, username string) (*User, error) {
+	row := q.db.QueryRow(ctx, retrieveUserByName, username)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.HashedPassword,
+		&i.Avatar,
+		&i.Nickname,
+		&i.Role,
+		&i.RoomID,
+		&i.Deleted,
+		&i.CreateAt,
+	)
+	return &i, err
 }
 
 const updateUser = `-- name: UpdateUser :one
@@ -203,7 +203,7 @@ type UpdateUserParams struct {
 	ID             int64       `json:"id"`
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+func (q *Queries) UpdateUser(ctx context.Context, arg *UpdateUserParams) (*User, error) {
 	row := q.db.QueryRow(ctx, updateUser,
 		arg.Username,
 		arg.HashedPassword,
@@ -225,5 +225,5 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Deleted,
 		&i.CreateAt,
 	)
-	return i, err
+	return &i, err
 }

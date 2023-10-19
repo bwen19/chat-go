@@ -1,31 +1,11 @@
-package core
+package db
 
 import (
 	"context"
-	"time"
 )
 
-type MemberInfo struct {
-	ID     int64     `json:"id"`
-	Name   string    `json:"name"`
-	Avatar string    `json:"avatar"`
-	Rank   string    `json:"rank"`
-	JoinAt time.Time `json:"join_at"`
-}
-
-type RoomInfo struct {
-	ID       int64          `json:"id"`
-	Name     string         `json:"name"`
-	Cover    string         `json:"cover"`
-	Category string         `json:"category"`
-	Unreads  int64          `json:"unreads"`
-	CreateAt time.Time      `json:"create_at"`
-	Members  []*MemberInfo  `json:"members"`
-	Messages []*MessageInfo `json:"messages"`
-}
-
-func (s *State) GetUserRooms(ctx context.Context, userID int64) ([]*RoomInfo, error) {
-	rows, err := s.Store.GetUserRooms(ctx, userID)
+func (s *dbStore) GetUserRooms(ctx context.Context, userID int64) ([]*RoomInfo, error) {
+	rows, err := s.RetrieveUserRooms(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,4 +50,8 @@ func (s *State) GetUserRooms(ctx context.Context, userID int64) ([]*RoomInfo, er
 		rsp = append(rsp, room)
 	}
 	return rsp, nil
+}
+
+func (s *dbStore) NewRoom(ctx context.Context, name string, userID int64, memberIDs []int64) (*RoomInfo, error) {
+	return nil, nil
 }

@@ -1,4 +1,4 @@
--- name: CreateRoomMember :exec
+-- name: InsertRoomMember :exec
 INSERT INTO room_members (
     room_id, member_id, rank
 ) VALUES (

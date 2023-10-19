@@ -1,4 +1,4 @@
--- name: CreateUser :one
+-- name: InsertUser :one
 INSERT INTO users (
     username, hashed_password, nickname,
     avatar, role, room_id
@@ -11,11 +11,11 @@ DELETE FROM users
 WHERE id = $1
 RETURNING room_id;
 
--- name: GetUser :one
+-- name: RetrieveUserByID :one
 SELECT * FROM users
 WHERE id = $1 LIMIT 1;
 
--- name: GetUserByName :one
+-- name: RetrieveUserByName :one
 SELECT * FROM users
 WHERE username = $1 LIMIT 1;
 

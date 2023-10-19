@@ -1,17 +1,16 @@
-package util
+package api
 
 import (
 	"errors"
+	"gochat/src/db"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-const (
-	foreignKeyViolation = "23503"
-	uniqueViolation     = "23505"
+var (
+	ErrUnmarshal = errors.New("json parsing error")
+	ErrInternal  = errors.New("internal server error")
 )
 
 func InvalidArgumentResponse(ctx *gin.Context) {
@@ -27,20 +26,17 @@ func PermissionDeniedResponse(ctx *gin.Context) {
 }
 
 func UniqueViolationResponse(ctx *gin.Context, err error) {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		if pgErr.Code == uniqueViolation {
-			ctx.String(http.StatusForbidden, "data already exists")
-			return
-		}
+	if db.HasViolation(err) {
+		ctx.String(http.StatusForbidden, "already exists")
+		return
 	}
 	ctx.String(http.StatusInternalServerError, "internal database error")
 }
 
 func RecordNotFoundResponse(ctx *gin.Context, err error) {
-	if errors.Is(err, pgx.ErrNoRows) {
-		ctx.String(http.StatusNotFound, "record not found")
-	} else {
-		ctx.String(http.StatusInternalServerError, "internal database error")
+	if errors.Is(err, db.ErrRecordNotFound) {
+		ctx.String(http.StatusNotFound, "not found")
+		return
 	}
+	ctx.String(http.StatusInternalServerError, "internal database error")
 }

@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.22.0
 
-package db
+package sqlc
 
 import (
 	"context"
@@ -11,30 +11,34 @@ import (
 )
 
 type Querier interface {
-	CreateFriend(ctx context.Context, arg CreateFriendParams) error
-	CreateMessage(ctx context.Context, arg CreateMessageParams) error
-	CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, error)
-	CreateRoomMember(ctx context.Context, arg CreateRoomMemberParams) error
-	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
-	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DeleteFriend(ctx context.Context, arg DeleteFriendParams) ([]int64, error)
 	DeleteFriendByUser(ctx context.Context, id int64) ([]int64, error)
-	DeleteMember(ctx context.Context, arg DeleteMemberParams) error
+	DeleteMember(ctx context.Context, arg *DeleteMemberParams) error
 	DeleteMemberByRoom(ctx context.Context, roomID int64) error
-	DeleteMemberByUser(ctx context.Context, arg DeleteMemberByUserParams) error
-	DeleteMessageByUser(ctx context.Context, arg DeleteMessageByUserParams) error
+	DeleteMemberByUser(ctx context.Context, arg *DeleteMemberByUserParams) error
+	DeleteMessageByUser(ctx context.Context, arg *DeleteMessageByUserParams) error
 	DeleteRooms(ctx context.Context, roomIds []int64) error
-	DeleteSession(ctx context.Context, arg DeleteSessionParams) error
+	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteSessionByUser(ctx context.Context, userID int64) error
 	DeleteUser(ctx context.Context, id int64) ([]int64, error)
-	GetSession(ctx context.Context, id uuid.UUID) (Session, error)
-	GetUser(ctx context.Context, id int64) (User, error)
-	GetUserByName(ctx context.Context, username string) (User, error)
-	GetUserFriends(ctx context.Context, userID int64) ([]GetUserFriendsRow, error)
-	GetUserRooms(ctx context.Context, memberID int64) ([]GetUserRoomsRow, error)
-	ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error)
-	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
-	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	InsertFriend(ctx context.Context, arg *InsertFriendParams) (*Friendship, error)
+	InsertMessage(ctx context.Context, arg *InsertMessageParams) error
+	InsertRoom(ctx context.Context, arg *InsertRoomParams) (*Room, error)
+	InsertRoomMember(ctx context.Context, arg *InsertRoomMemberParams) error
+	InsertSession(ctx context.Context, arg *InsertSessionParams) (*Session, error)
+	InsertUser(ctx context.Context, arg *InsertUserParams) (*User, error)
+	ListSessions(ctx context.Context, arg *ListSessionsParams) ([]*ListSessionsRow, error)
+	ListUserFriends(ctx context.Context, userID int64) ([]*ListUserFriendsRow, error)
+	ListUsers(ctx context.Context, arg *ListUsersParams) ([]*ListUsersRow, error)
+	RetrieveFriend(ctx context.Context, arg *RetrieveFriendParams) (*Friendship, error)
+	RetrieveFriendDetail(ctx context.Context, arg *RetrieveFriendDetailParams) (*RetrieveFriendDetailRow, error)
+	RetrieveFriendRooms(ctx context.Context, roomID int64) ([]*RetrieveFriendRoomsRow, error)
+	RetrieveSession(ctx context.Context, id uuid.UUID) (*Session, error)
+	RetrieveUserByID(ctx context.Context, id int64) (*User, error)
+	RetrieveUserByName(ctx context.Context, username string) (*User, error)
+	RetrieveUserRooms(ctx context.Context, memberID int64) ([]*RetrieveUserRoomsRow, error)
+	UpdateAddFriend(ctx context.Context, arg *UpdateAddFriendParams) (*Friendship, error)
+	UpdateFriend(ctx context.Context, arg *UpdateFriendParams) error
+	UpdateUser(ctx context.Context, arg *UpdateUserParams) (*User, error)
 }
 
 var _ Querier = (*Queries)(nil)

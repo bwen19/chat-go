@@ -1,4 +1,4 @@
--- name: CreateMessage :exec
+-- name: InsertMessage :exec
 INSERT INTO messages (
     room_id, sender_id, content, kind, send_at
 ) VALUES (

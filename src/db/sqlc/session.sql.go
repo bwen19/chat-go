@@ -3,7 +3,7 @@
 //   sqlc v1.22.0
 // source: session.sql
 
-package db
+package sqlc
 
 import (
 	"context"
@@ -12,7 +12,27 @@ import (
 	"github.com/google/uuid"
 )
 
-const createSession = `-- name: CreateSession :one
+const deleteSession = `-- name: DeleteSession :exec
+DELETE FROM sessions
+WHERE id = $1::uuid
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSession, id)
+	return err
+}
+
+const deleteSessionByUser = `-- name: DeleteSessionByUser :exec
+DELETE FROM sessions
+WHERE user_id = $1::bigint
+`
+
+func (q *Queries) DeleteSessionByUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteSessionByUser, userID)
+	return err
+}
+
+const insertSession = `-- name: InsertSession :one
 INSERT INTO sessions (
     id, user_id, refresh_token,
     client_ip, user_agent, expire_at
@@ -21,7 +41,7 @@ INSERT INTO sessions (
 ) RETURNING id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at
 `
 
-type CreateSessionParams struct {
+type InsertSessionParams struct {
 	ID           uuid.UUID `json:"id"`
 	UserID       int64     `json:"user_id"`
 	RefreshToken string    `json:"refresh_token"`
@@ -30,8 +50,8 @@ type CreateSessionParams struct {
 	ExpireAt     time.Time `json:"expire_at"`
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
-	row := q.db.QueryRow(ctx, createSession,
+func (q *Queries) InsertSession(ctx context.Context, arg *InsertSessionParams) (*Session, error) {
+	row := q.db.QueryRow(ctx, insertSession,
 		arg.ID,
 		arg.UserID,
 		arg.RefreshToken,
@@ -49,52 +69,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.ExpireAt,
 		&i.CreateAt,
 	)
-	return i, err
-}
-
-const deleteSession = `-- name: DeleteSession :exec
-DELETE FROM sessions
-WHERE id = $1::uuid AND user_id = $2::bigint
-`
-
-type DeleteSessionParams struct {
-	ID     uuid.UUID `json:"id"`
-	UserID int64     `json:"user_id"`
-}
-
-func (q *Queries) DeleteSession(ctx context.Context, arg DeleteSessionParams) error {
-	_, err := q.db.Exec(ctx, deleteSession, arg.ID, arg.UserID)
-	return err
-}
-
-const deleteSessionByUser = `-- name: DeleteSessionByUser :exec
-DELETE FROM sessions
-WHERE user_id = $1::bigint
-`
-
-func (q *Queries) DeleteSessionByUser(ctx context.Context, userID int64) error {
-	_, err := q.db.Exec(ctx, deleteSessionByUser, userID)
-	return err
-}
-
-const getSession = `-- name: GetSession :one
-SELECT id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at FROM sessions
-WHERE id = $1::uuid LIMIT 1
-`
-
-func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (Session, error) {
-	row := q.db.QueryRow(ctx, getSession, id)
-	var i Session
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.RefreshToken,
-		&i.ClientIp,
-		&i.UserAgent,
-		&i.ExpireAt,
-		&i.CreateAt,
-	)
-	return i, err
+	return &i, err
 }
 
 const listSessions = `-- name: ListSessions :many
@@ -123,13 +98,13 @@ type ListSessionsRow struct {
 	Total     int64     `json:"total"`
 }
 
-func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error) {
+func (q *Queries) ListSessions(ctx context.Context, arg *ListSessionsParams) ([]*ListSessionsRow, error) {
 	rows, err := q.db.Query(ctx, listSessions, arg.Limit, arg.Offset, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListSessionsRow{}
+	items := []*ListSessionsRow{}
 	for rows.Next() {
 		var i ListSessionsRow
 		if err := rows.Scan(
@@ -142,10 +117,30 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]L
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+const retrieveSession = `-- name: RetrieveSession :one
+SELECT id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at FROM sessions
+WHERE id = $1::uuid LIMIT 1
+`
+
+func (q *Queries) RetrieveSession(ctx context.Context, id uuid.UUID) (*Session, error) {
+	row := q.db.QueryRow(ctx, retrieveSession, id)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RefreshToken,
+		&i.ClientIp,
+		&i.UserAgent,
+		&i.ExpireAt,
+		&i.CreateAt,
+	)
+	return &i, err
 }
