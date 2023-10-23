@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"errors"
-	"fmt"
 	"gochat/src/db/rdb"
 	"gochat/src/db/sqlc"
 	"gochat/src/util"
@@ -29,7 +28,7 @@ func New(config *util.Config) (Store, error) {
 	ctx := context.Background()
 	connPool, err := pgxpool.New(ctx, config.DatabaseUrl)
 	if err != nil {
-		return nil, errors.New("failed to create pgx pool")
+		return nil, errors.New("cannot create pgx pool")
 	}
 
 	client := redis.NewClient(&redis.Options{
@@ -45,7 +44,7 @@ func New(config *util.Config) (Store, error) {
 	}
 
 	if err = store.setupAdministrator(ctx); err != nil {
-		return nil, errors.New("failed to create admin account")
+		return nil, errors.New("cannot create admin account")
 	}
 
 	return store, nil
@@ -76,12 +75,10 @@ func (s *dbStore) execTx(ctx context.Context, fn func(*sqlc.Queries) error) erro
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback(ctx)
 
-	q := s.WithTx(tx)
-	if err = fn(q); err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			return fmt.Errorf("tx err: %v, rb err: %v", err, rbErr)
-		}
+	qtx := s.WithTx(tx)
+	if err = fn(qtx); err != nil {
 		return err
 	}
 

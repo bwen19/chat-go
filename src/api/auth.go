@@ -32,7 +32,7 @@ func (s *Server) login(ctx *gin.Context) {
 
 	user, err := s.store.GetUserByName(ctx, req.Username)
 	if err != nil {
-		RecordNotFoundResponse(ctx, err)
+		NotFoundResponse(ctx, err)
 		return
 	}
 
@@ -110,7 +110,7 @@ func (s *Server) autoLogin(ctx *gin.Context) {
 
 	user, err := s.store.GetUserByID(ctx, payload.UserID)
 	if err != nil {
-		RecordNotFoundResponse(ctx, err)
+		NotFoundResponse(ctx, err)
 		return
 	}
 

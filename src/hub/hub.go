@@ -4,30 +4,34 @@ import (
 	"gochat/src/db"
 )
 
-type HubCenter struct {
-	rooms      map[int64]*Room          // roomID - room
-	pRoom      map[int64]int64          // userID - personal roomID
-	userRooms  map[int64]map[int64]bool // userID - roomID - bool
+type Hub struct {
 	running    bool
+	rooms      map[int64]*Room              // roomID - room
+	pRoom      map[int64]int64              // userID - personal roomID
+	userRooms  map[int64]map[int64]struct{} // userID - roomIDs
 	register   chan *registerParams
 	unregister chan *Client
 	join       chan *roomParams
 	leave      chan *roomParams
+	delete     chan int64
+	close      chan struct{}
 }
 
-func NewHubCenter() *HubCenter {
-	return &HubCenter{
+func NewHub() *Hub {
+	return &Hub{
 		rooms:      make(map[int64]*Room),
 		pRoom:      make(map[int64]int64),
-		userRooms:  make(map[int64]map[int64]bool),
+		userRooms:  make(map[int64]map[int64]struct{}),
 		register:   make(chan *registerParams),
 		unregister: make(chan *Client),
 		join:       make(chan *roomParams),
 		leave:      make(chan *roomParams),
+		delete:     make(chan int64),
+		close:      make(chan struct{}),
 	}
 }
 
-func (h *HubCenter) Start() {
+func (h *Hub) Start() {
 	if h.running {
 		return
 	}
@@ -35,18 +39,10 @@ func (h *HubCenter) Start() {
 	go h.run()
 }
 
-func (h *HubCenter) run() {
-	for {
-		select {
-		case arg := <-h.register:
-			h.registerClient(arg)
-		case client := <-h.unregister:
-			h.unregisterClient(client)
-		case arg := <-h.join:
-			h.joinRoom(arg)
-		case arg := <-h.leave:
-			h.leaveRoom(arg)
-		}
+func (h *Hub) Stop() {
+	if h.running {
+		h.close <- struct{}{}
+		h.running = false
 	}
 }
 
@@ -55,87 +51,104 @@ type registerParams struct {
 	rooms  []*db.RoomInfo
 }
 
-func (h *HubCenter) registerClient(arg *registerParams) {
-	userID := arg.client.userID
-	privateRoomID := arg.client.roomID
-
-	if _, ok := h.pRoom[arg.client.userID]; !ok {
-		h.pRoom[arg.client.userID] = privateRoomID
-	}
-
-	if _, ok := h.userRooms[userID]; !ok {
-		roomSet := make(map[int64]bool, len(arg.rooms))
-		for _, room := range arg.rooms {
-			roomID := room.ID
-			if _, ok := h.rooms[roomID]; !ok {
-				h.rooms[roomID] = startNewRoom()
-			}
-			roomSet[roomID] = true
-		}
-		h.userRooms[userID] = roomSet
-	}
-
-	for roomID := range h.userRooms[userID] {
-		h.rooms[roomID].join <- arg.client
-	}
-}
-
-func (h *HubCenter) unregisterClient(client *Client) {
-	userID := client.userID
-
-	for roomID := range h.userRooms[userID] {
-		if hub, ok := h.rooms[roomID]; ok {
-			arg := newLeaveRoomParams(roomID, client, h)
-			hub.leave <- arg
-			<-arg.done
-		}
-	}
-	if privateRoomID, ok := h.pRoom[userID]; ok {
-		if _, ok := h.rooms[privateRoomID]; !ok {
-			delete(h.pRoom, userID)
-			delete(h.userRooms, userID)
-		}
-	}
-	close(client.send)
-}
-
 type roomParams struct {
 	roomID  int64
 	userIDs []int64
 }
 
-func (h *HubCenter) joinRoom(arg *roomParams) {
-	roomID := arg.roomID
-	hub, ok := h.rooms[roomID]
-	if !ok {
-		hub = startNewRoom()
-		h.rooms[roomID] = hub
-	}
+func (h *Hub) run() {
+	for {
+		select {
+		case arg := <-h.register:
+			userID := arg.client.userID
+			pRoomID := arg.client.roomID
 
-	for _, userID := range arg.userIDs {
-		if privateRoomID, ok := h.pRoom[userID]; ok {
-			if pHub, ok := h.rooms[privateRoomID]; ok {
-				for client := range pHub.clients {
-					hub.join <- client
-				}
+			if _, ok := h.pRoom[userID]; !ok {
+				h.pRoom[userID] = pRoomID
 			}
-		}
-	}
-}
 
-func (h *HubCenter) leaveRoom(arg *roomParams) {
-	roomID := arg.roomID
-	if hub, ok := h.rooms[roomID]; ok {
-		for _, userID := range arg.userIDs {
-			if privateRoomID, ok := h.pRoom[userID]; ok {
-				if pHub, ok := h.rooms[privateRoomID]; ok {
-					for client := range pHub.clients {
-						lvarg := newLeaveRoomParams(roomID, client, h)
-						hub.leave <- lvarg
-						<-lvarg.done
+			if _, ok := h.userRooms[userID]; !ok {
+				roomMap := make(map[int64]struct{}, len(arg.rooms))
+				for _, room := range arg.rooms {
+					roomID := room.ID
+					if _, ok := h.rooms[roomID]; !ok {
+						h.rooms[roomID] = startNewRoom()
+					}
+					roomMap[roomID] = struct{}{}
+				}
+				h.userRooms[userID] = roomMap
+			}
+
+			for roomID := range h.userRooms[userID] {
+				h.rooms[roomID].join <- arg.client
+			}
+
+		case client := <-h.unregister:
+			if roomMap, ok := h.userRooms[client.userID]; ok {
+				for roomID := range roomMap {
+					if room, ok := h.rooms[roomID]; ok {
+						room.leave <- client
 					}
 				}
 			}
+			close(client.send)
+
+		case arg := <-h.join:
+			roomID := arg.roomID
+
+			room, ok := h.rooms[roomID]
+			if !ok {
+				room = startNewRoom()
+				h.rooms[roomID] = room
+			}
+
+			for _, userID := range arg.userIDs {
+				if pRoomID, ok := h.pRoom[userID]; ok {
+					if pRoom, ok := h.rooms[pRoomID]; ok {
+						for client := range pRoom.clients {
+							room.join <- client
+						}
+					}
+				}
+				if roomMap, ok := h.userRooms[userID]; ok {
+					roomMap[roomID] = struct{}{}
+				}
+			}
+
+		case arg := <-h.leave:
+			roomID := arg.roomID
+			if room, ok := h.rooms[roomID]; ok {
+				for _, userID := range arg.userIDs {
+					if roomMap, ok := h.userRooms[userID]; ok {
+						delete(roomMap, roomID)
+					}
+					if pRoomID, ok := h.pRoom[userID]; ok {
+						if pRoom, ok := h.rooms[pRoomID]; ok {
+							for client := range pRoom.clients {
+								room.leave <- client
+							}
+						}
+					}
+				}
+			}
+
+		case roomID := <-h.delete:
+			if room, ok := h.rooms[roomID]; ok {
+				delete(h.rooms, roomID)
+				var userID int64
+				for client := range room.clients {
+					if client.userID != userID {
+						userID = client.userID
+						if roomMap, ok := h.userRooms[userID]; ok {
+							delete(roomMap, roomID)
+						}
+					}
+				}
+				close(room.broadcast)
+			}
+
+		case <-h.close:
+			return
 		}
 	}
 }

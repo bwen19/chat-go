@@ -46,8 +46,8 @@ Table rooms as R {
 }
 
 Table room_members as Y {
-    room_id bigint [ref: > R.id, not null]
-    member_id bigint [ref: > U.id, not null]
+    room_id bigint [ref: > R.id]
+    member_id bigint [ref: > U.id]
     rank varchar [not null]
     join_at timestamptz [not null, default: `now()`]
 

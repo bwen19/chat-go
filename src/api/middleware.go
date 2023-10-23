@@ -66,6 +66,7 @@ func (s *Server) adminMiddleware() gin.HandlerFunc {
 
 		if user.Role != db.RoleAdmin {
 			ctx.AbortWithStatus(http.StatusForbidden)
+			return
 		}
 		ctx.Next()
 	}

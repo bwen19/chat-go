@@ -1,6 +1,6 @@
 -- SQL dump generated using DBML (dbml-lang.org)
 -- Database: PostgreSQL
--- Generated at: 2023-09-19T06:23:58.823Z
+-- Generated at: 2023-10-22T08:30:14.408Z
 
 CREATE TABLE "users" (
   "id" bigserial PRIMARY KEY,
@@ -42,8 +42,8 @@ CREATE TABLE "rooms" (
 );
 
 CREATE TABLE "room_members" (
-  "room_id" bigint NOT NULL,
-  "member_id" bigint NOT NULL,
+  "room_id" bigint,
+  "member_id" bigint,
   "rank" varchar NOT NULL,
   "join_at" timestamptz NOT NULL DEFAULT (now()),
   PRIMARY KEY ("room_id", "member_id")

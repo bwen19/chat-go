@@ -8,7 +8,19 @@ package sqlc
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const deleteRoom = `-- name: DeleteRoom :exec
+DELETE FROM rooms
+WHERE id = $1
+`
+
+func (q *Queries) DeleteRoom(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteRoom, id)
+	return err
+}
 
 const deleteRooms = `-- name: DeleteRooms :exec
 DELETE FROM rooms
@@ -23,10 +35,11 @@ func (q *Queries) DeleteRooms(ctx context.Context, roomIds []int64) error {
 const insertRoom = `-- name: InsertRoom :one
 INSERT INTO rooms (
     name, cover, category
-) VALUES (
+  )
+VALUES (
     $1, $2, $3
-) RETURNING
-    id, name, cover, category, create_at
+  )
+RETURNING id, name, cover, category, create_at
 `
 
 type InsertRoomParams struct {
@@ -49,11 +62,21 @@ func (q *Queries) InsertRoom(ctx context.Context, arg *InsertRoomParams) (*Room,
 }
 
 const retrieveFriendRooms = `-- name: RetrieveFriendRooms :many
-SELECT m.room_id, m.rank, m.join_at, r.category,
-    r.create_at, m.member_id, u.nickname, u.avatar
-FROM room_members AS m
-INNER JOIN rooms AS r ON r.id = m.room_id
-INNER JOIN users AS u ON u.id = m.member_id
+SELECT
+  m.room_id,
+  m.rank,
+  m.join_at,
+  r.category,
+  r.create_at,
+  m.member_id,
+  u.nickname,
+  u.avatar
+FROM
+  room_members AS m
+  JOIN rooms AS r
+    ON r.id = m.room_id
+  JOIN users AS u
+    ON u.id = m.member_id
 WHERE m.room_id = $1
 `
 
@@ -97,22 +120,64 @@ func (q *Queries) RetrieveFriendRooms(ctx context.Context, roomID int64) ([]*Ret
 	return items, nil
 }
 
+const retrieveRoom = `-- name: RetrieveRoom :one
+SELECT id, name, cover, category, create_at FROM rooms
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) RetrieveRoom(ctx context.Context, id int64) (*Room, error) {
+	row := q.db.QueryRow(ctx, retrieveRoom, id)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Cover,
+		&i.Category,
+		&i.CreateAt,
+	)
+	return &i, err
+}
+
 const retrieveUserRooms = `-- name: RetrieveUserRooms :many
 WITH rooms_cte AS (
-    SELECT id AS room_id, name, cover, category, create_at
-    FROM rooms WHERE id IN (
-        SELECT room_id FROM room_members AS m
-        WHERE m.member_id = $1)
+  SELECT
+    id AS room_id,
+    name,
+    cover,
+    category,
+    create_at
+  FROM rooms
+  WHERE id IN (
+    SELECT room_id
+    FROM room_members AS m
+    WHERE m.member_id = $1
+  )
 )
-SELECT room_id, name, cover, category, create_at,
-    member_id, rank, join_at, nickname, avatar
+SELECT
+  room_id,
+  name,
+  cover,
+  category,
+  create_at,
+  member_id,
+  rank,
+  join_at,
+  nickname,
+  avatar
 FROM rooms_cte AS r,
-    LATERAL (
-        SELECT member_id, rank, join_at, nickname, avatar
-        FROM room_members AS y
-        INNER JOIN users AS u ON y.member_id = u.id
-        WHERE y.room_id = r.room_id
-    ) AS m
+  LATERAL (
+    SELECT
+      member_id,
+      rank,
+      join_at,
+      nickname,
+      avatar
+    FROM
+      room_members AS y
+      JOIN users AS u
+        ON y.member_id = u.id
+    WHERE y.room_id = r.room_id
+  ) AS m
 `
 
 type RetrieveUserRoomsRow struct {
@@ -157,4 +222,32 @@ func (q *Queries) RetrieveUserRooms(ctx context.Context, memberID int64) ([]*Ret
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateRoom = `-- name: UpdateRoom :one
+UPDATE rooms
+SET
+  name = COALESCE($1, name),
+  cover = COALESCE($2, cover)
+WHERE id = $3
+RETURNING id, name, cover, category, create_at
+`
+
+type UpdateRoomParams struct {
+	Name  pgtype.Text `json:"name"`
+	Cover pgtype.Text `json:"cover"`
+	ID    int64       `json:"id"`
+}
+
+func (q *Queries) UpdateRoom(ctx context.Context, arg *UpdateRoomParams) (*Room, error) {
+	row := q.db.QueryRow(ctx, updateRoom, arg.Name, arg.Cover, arg.ID)
+	var i Room
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Cover,
+		&i.Category,
+		&i.CreateAt,
+	)
+	return &i, err
 }

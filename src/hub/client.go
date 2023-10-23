@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
@@ -40,11 +39,11 @@ func NewClient(userID int64, roomID int64, conn *websocket.Conn) *Client {
 		userID: userID,
 		roomID: roomID,
 		conn:   conn,
-		send:   make(chan []byte, 128),
+		send:   make(chan []byte, 256),
 	}
 }
 
-func (c *Client) ReadPump(ctx *gin.Context, h ClientHandler) {
+func (c *Client) ReadPump(ctx context.Context, h ClientHandler) {
 	defer func() {
 		h.Unregister(c)
 		c.conn.Close()
