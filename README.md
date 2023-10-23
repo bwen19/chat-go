@@ -1,8 +1,8 @@
-# Chat service
+# Go Natter Api
 
-A chat api build with Go
+A chat backend api built with Golang
 
-## Setup local development
+## Getting Started
 
 ### Install tools
 
@@ -15,11 +15,15 @@ A chat api build with Go
 
 ### Setup infrastructure
 
-- Create the docker network
-- Start postgres container
-- Create chat database
-- Run db migration up all versions
-- Run db migration down all versions
-- Generate SQL CRUD with sqlc
-- Generate DB mock with gomock
-- Create a new db migration
+- Create the docker network `make network`
+- Start postgres container `make postgres`
+- Start redis container `make redis`
+- Create chat database `make createdb`
+- Run db migration up all versions `make migrateup`
+- Run db migration down all versions `make migratedown`
+- Generate SQL CRUD with sqlc `make sqlc`
+- Run Golang server `make server`
+
+## License
+
+Licensed under the [Apache License, Version 2.0](/LICENSE)

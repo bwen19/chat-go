@@ -22,13 +22,13 @@ func (q *Queries) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const deleteSessionByUser = `-- name: DeleteSessionByUser :exec
+const deleteSessionsByUser = `-- name: DeleteSessionsByUser :exec
 DELETE FROM sessions
 WHERE user_id = $1::bigint
 `
 
-func (q *Queries) DeleteSessionByUser(ctx context.Context, userID int64) error {
-	_, err := q.db.Exec(ctx, deleteSessionByUser, userID)
+func (q *Queries) DeleteSessionsByUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteSessionsByUser, userID)
 	return err
 }
 
@@ -36,9 +36,11 @@ const insertSession = `-- name: InsertSession :one
 INSERT INTO sessions (
     id, user_id, refresh_token,
     client_ip, user_agent, expire_at
-) VALUES (
+  )
+VALUES (
     $1, $2, $3, $4, $5, $6
-) RETURNING id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at
+  )
+RETURNING id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at
 `
 
 type InsertSessionParams struct {
@@ -72,59 +74,6 @@ func (q *Queries) InsertSession(ctx context.Context, arg *InsertSessionParams) (
 	return &i, err
 }
 
-const listSessions = `-- name: ListSessions :many
-SELECT
-    id, client_ip, user_agent, expire_at, create_at,
-    count(*) OVER() AS total
-FROM sessions
-WHERE user_id = $3::bigint
-ORDER BY create_at
-LIMIT $1
-OFFSET $2
-`
-
-type ListSessionsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-	UserID int64 `json:"user_id"`
-}
-
-type ListSessionsRow struct {
-	ID        uuid.UUID `json:"id"`
-	ClientIp  string    `json:"client_ip"`
-	UserAgent string    `json:"user_agent"`
-	ExpireAt  time.Time `json:"expire_at"`
-	CreateAt  time.Time `json:"create_at"`
-	Total     int64     `json:"total"`
-}
-
-func (q *Queries) ListSessions(ctx context.Context, arg *ListSessionsParams) ([]*ListSessionsRow, error) {
-	rows, err := q.db.Query(ctx, listSessions, arg.Limit, arg.Offset, arg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*ListSessionsRow{}
-	for rows.Next() {
-		var i ListSessionsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ClientIp,
-			&i.UserAgent,
-			&i.ExpireAt,
-			&i.CreateAt,
-			&i.Total,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const retrieveSession = `-- name: RetrieveSession :one
 SELECT id, user_id, refresh_token, client_ip, user_agent, expire_at, create_at FROM sessions
 WHERE id = $1::uuid LIMIT 1
@@ -143,4 +92,60 @@ func (q *Queries) RetrieveSession(ctx context.Context, id uuid.UUID) (*Session, 
 		&i.CreateAt,
 	)
 	return &i, err
+}
+
+const retrieveSessions = `-- name: RetrieveSessions :many
+SELECT
+  id,
+  client_ip,
+  user_agent,
+  expire_at,
+  create_at,
+  count(*) OVER() AS total
+FROM sessions
+WHERE user_id = $3::bigint
+ORDER BY create_at
+LIMIT $1 OFFSET $2
+`
+
+type RetrieveSessionsParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+	UserID int64 `json:"user_id"`
+}
+
+type RetrieveSessionsRow struct {
+	ID        uuid.UUID `json:"id"`
+	ClientIp  string    `json:"client_ip"`
+	UserAgent string    `json:"user_agent"`
+	ExpireAt  time.Time `json:"expire_at"`
+	CreateAt  time.Time `json:"create_at"`
+	Total     int64     `json:"total"`
+}
+
+func (q *Queries) RetrieveSessions(ctx context.Context, arg *RetrieveSessionsParams) ([]*RetrieveSessionsRow, error) {
+	rows, err := q.db.Query(ctx, retrieveSessions, arg.Limit, arg.Offset, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*RetrieveSessionsRow{}
+	for rows.Next() {
+		var i RetrieveSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientIp,
+			&i.UserAgent,
+			&i.ExpireAt,
+			&i.CreateAt,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

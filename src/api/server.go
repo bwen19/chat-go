@@ -15,13 +15,15 @@ import (
 type Server struct {
 	srv        *http.Server
 	config     *util.Config
-	cronJob    *cron.Cron
-	hub        *hub.HubCenter
+	cron       *cron.Cron
+	hub        *hub.Hub
 	store      db.Store
 	tokenMaker token.Maker
 }
 
 func NewServer(config *util.Config) (*Server, error) {
+	hub := hub.NewHub()
+
 	store, err := db.New(config)
 	if err != nil {
 		return nil, err
@@ -31,8 +33,6 @@ func NewServer(config *util.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	hub := hub.NewHubCenter()
 
 	server := &Server{
 		config:     config,
@@ -47,21 +47,22 @@ func NewServer(config *util.Config) (*Server, error) {
 }
 
 func (s *Server) Start() error {
+	s.cron.Start()
 	s.hub.Start()
-	s.cronJob.Start()
 	return s.srv.ListenAndServe()
 }
 
 func (s *Server) Stop(ctx context.Context) error {
-	s.cronJob.Stop()
+	s.cron.Stop()
 	s.store.DumpAllMessages(ctx)
+	s.hub.Stop()
 	return s.srv.Shutdown(ctx)
 }
 
 func (s *Server) setupCronJob() {
 	c := cron.New()
-	c.AddFunc("0 3 * * *", s.store.DumpPartialMessages)
-	s.cronJob = c
+	c.AddFunc("0 3 * * *", s.store.DumpPartialMessages(context.Background()))
+	s.cron = c
 }
 
 func (s *Server) setupHttpServer() {

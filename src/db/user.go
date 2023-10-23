@@ -42,7 +42,7 @@ func (s *dbStore) CreateUser(ctx context.Context, arg *CreateUserParams) (*UserI
 			return err
 		}
 
-		err = q.InsertRoomMember(ctx, &sqlc.InsertRoomMemberParams{
+		err = q.InsertMember(ctx, &sqlc.InsertMemberParams{
 			RoomID:   room.ID,
 			MemberID: user.ID,
 			Rank:     RankMember,
@@ -52,14 +52,10 @@ func (s *dbStore) CreateUser(ctx context.Context, arg *CreateUserParams) (*UserI
 		}
 
 		userInfo = NewUserInfo(user)
-		return err
+		return nil
 	})
 
 	return userInfo, err
-}
-
-func (s *dbStore) cacheUser(ctx context.Context, user *UserInfo) error {
-	return s.SetCache(ctx, userKey(user.ID), user)
 }
 
 func (s *dbStore) GetUserByID(ctx context.Context, userID int64) (*UserInfo, error) {
@@ -80,27 +76,30 @@ func (s *dbStore) GetUserByID(ctx context.Context, userID int64) (*UserInfo, err
 			return nil, err
 		}
 	}
+
 	return userInfo, nil
 }
 
 func (s *dbStore) GetUserByName(ctx context.Context, username string) (*sqlc.User, error) {
 	user, err := s.RetrieveUserByName(ctx, username)
 	if err != nil {
-		return user, err
+		return nil, err
 	}
 
 	userInfo := NewUserInfo(user)
 	if err = s.cacheUser(ctx, userInfo); err != nil {
-		return user, err
+		return nil, err
 	}
 
 	return user, nil
 }
 
-func (s *dbStore) GetUsers(ctx context.Context, arg *sqlc.ListUsersParams) (int64, []*UserInfo, error) {
+type ListUsersParams sqlc.RetrieveUsersParams
+
+func (s *dbStore) ListUsers(ctx context.Context, arg *ListUsersParams) (int64, []*UserInfo, error) {
 	var total int64
 
-	users, err := s.ListUsers(ctx, arg)
+	users, err := s.RetrieveUsers(ctx, (*sqlc.RetrieveUsersParams)(arg))
 	if err != nil {
 		return total, nil, err
 	}
@@ -110,24 +109,27 @@ func (s *dbStore) GetUsers(ctx context.Context, arg *sqlc.ListUsersParams) (int6
 	if len(users) > 0 {
 		total = users[0].Total
 
-		for _, user := range users {
-			userList = append(userList, &UserInfo{
-				ID:       user.ID,
-				Username: user.Username,
-				Nickname: user.Nickname,
-				Avatar:   user.Avatar,
-				Role:     user.Role,
-				Deleted:  user.Deleted,
-				CreateAt: user.CreateAt,
-			})
+		for _, u := range users {
+			userInfo := &UserInfo{
+				ID:       u.ID,
+				Username: u.Username,
+				Nickname: u.Nickname,
+				Avatar:   u.Avatar,
+				Role:     u.Role,
+				Deleted:  u.Deleted,
+				CreateAt: u.CreateAt,
+			}
+			userList = append(userList, userInfo)
 		}
 	}
 
 	return total, userList, nil
 }
 
-func (s *dbStore) ModifyUser(ctx context.Context, arg *sqlc.UpdateUserParams) (*UserInfo, error) {
-	user, err := s.UpdateUser(ctx, arg)
+type ModifyUserParams sqlc.UpdateUserParams
+
+func (s *dbStore) ModifyUser(ctx context.Context, arg *ModifyUserParams) (*UserInfo, error) {
+	user, err := s.UpdateUser(ctx, (*sqlc.UpdateUserParams)(arg))
 	if err != nil {
 		return nil, err
 	}
@@ -142,39 +144,45 @@ func (s *dbStore) ModifyUser(ctx context.Context, arg *sqlc.UpdateUserParams) (*
 
 func (s *dbStore) RemoveUser(ctx context.Context, userID int64) error {
 	err := s.execTx(ctx, func(q *sqlc.Queries) error {
-		err := q.DeleteSessionByUser(ctx, userID)
+		err := q.DeleteSessionsByUser(ctx, userID)
 		if err != nil {
 			return err
 		}
 
-		roomIds, err := q.DeleteFriendByUser(ctx, userID)
+		roomIDs, err := q.RetrieveOwnerRoomIDs(ctx, userID)
 		if err != nil {
 			return err
 		}
 
-		err = q.DeleteMessageByUser(ctx, &sqlc.DeleteMessageByUserParams{
+		friendRoomIDs, err := q.DeleteFriendsByUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+
+		roomIDs = append(roomIDs, friendRoomIDs...)
+		err = q.DeleteMessagesByUser(ctx, &sqlc.DeleteMessagesByUserParams{
 			UserID:  userID,
-			RoomIds: roomIds,
+			RoomIds: roomIDs,
 		})
 		if err != nil {
 			return err
 		}
 
-		err = q.DeleteMemberByUser(ctx, &sqlc.DeleteMemberByUserParams{
+		err = q.DeleteMembersByUser(ctx, &sqlc.DeleteMembersByUserParams{
 			UserID:  userID,
-			RoomIds: roomIds,
+			RoomIds: roomIDs,
 		})
 		if err != nil {
 			return err
 		}
 
-		r2, err := q.DeleteUser(ctx, userID)
+		personalRoomID, err := q.DeleteUser(ctx, userID)
 		if err != nil {
 			return err
 		}
 
-		roomIds = append(roomIds, r2...)
-		if err = q.DeleteRooms(ctx, roomIds); err != nil {
+		roomIDs = append(roomIDs, personalRoomID)
+		if err = q.DeleteRooms(ctx, roomIDs); err != nil {
 			return err
 		}
 
@@ -185,4 +193,8 @@ func (s *dbStore) RemoveUser(ctx context.Context, userID int64) error {
 	}
 
 	return s.DelCache(ctx, userKey(userID))
+}
+
+func (s *dbStore) cacheUser(ctx context.Context, user *UserInfo) error {
+	return s.SetCache(ctx, userKey(user.ID), user)
 }

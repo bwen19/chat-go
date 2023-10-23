@@ -35,7 +35,7 @@ func (s *Server) createUser(ctx *gin.Context) {
 		Role:     req.Role,
 	})
 	if err != nil {
-		UniqueViolationResponse(ctx, err)
+		ViolationResponse(ctx, err)
 		return
 	}
 
@@ -84,7 +84,7 @@ func (s *Server) listUsers(ctx *gin.Context) {
 		return
 	}
 
-	total, users, err := s.store.GetUsers(ctx, &sqlc.ListUsersParams{
+	total, users, err := s.store.ListUsers(ctx, &db.ListUsersParams{
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 	})
@@ -119,7 +119,7 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		return
 	}
 
-	arg := &sqlc.UpdateUserParams{ID: req.UserID}
+	arg := &db.ModifyUserParams{ID: req.UserID}
 	if req.Username != nil {
 		arg.Username = pgtype.Text{String: *req.Username, Valid: true}
 	}
@@ -172,7 +172,7 @@ func (s *Server) changePassword(ctx *gin.Context) {
 
 	user, err := s.store.RetrieveUserByID(ctx, payload.UserID)
 	if err != nil {
-		RecordNotFoundResponse(ctx, err)
+		NotFoundResponse(ctx, err)
 		return
 	}
 
@@ -217,7 +217,7 @@ func (s *Server) changeUserInfo(ctx *gin.Context) {
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	arg := &sqlc.UpdateUserParams{ID: authPayload.UserID}
+	arg := &db.ModifyUserParams{ID: authPayload.UserID}
 	if req.Username != nil {
 		arg.Username = pgtype.Text{String: *req.Username, Valid: true}
 	}
@@ -256,7 +256,7 @@ func (s *Server) findUser(ctx *gin.Context) {
 
 	user, err := s.store.GetUserByName(ctx, req.Username)
 	if err != nil {
-		RecordNotFoundResponse(ctx, err)
+		NotFoundResponse(ctx, err)
 		return
 	}
 

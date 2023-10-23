@@ -11,33 +11,42 @@ import (
 )
 
 type Querier interface {
-	DeleteFriendByUser(ctx context.Context, id int64) ([]int64, error)
+	DeleteFriendsByUser(ctx context.Context, userID int64) ([]int64, error)
 	DeleteMember(ctx context.Context, arg *DeleteMemberParams) error
-	DeleteMemberByRoom(ctx context.Context, roomID int64) error
-	DeleteMemberByUser(ctx context.Context, arg *DeleteMemberByUserParams) error
-	DeleteMessageByUser(ctx context.Context, arg *DeleteMessageByUserParams) error
+	DeleteMembers(ctx context.Context, arg *DeleteMembersParams) ([]int64, error)
+	DeleteMembersByRoom(ctx context.Context, roomID int64) error
+	DeleteMembersByUser(ctx context.Context, arg *DeleteMembersByUserParams) error
+	DeleteMessagesByRoom(ctx context.Context, roomID int64) error
+	DeleteMessagesByUser(ctx context.Context, arg *DeleteMessagesByUserParams) error
+	DeleteRoom(ctx context.Context, id int64) error
 	DeleteRooms(ctx context.Context, roomIds []int64) error
 	DeleteSession(ctx context.Context, id uuid.UUID) error
-	DeleteSessionByUser(ctx context.Context, userID int64) error
-	DeleteUser(ctx context.Context, id int64) ([]int64, error)
+	DeleteSessionsByUser(ctx context.Context, userID int64) error
+	DeleteUser(ctx context.Context, id int64) (int64, error)
 	InsertFriend(ctx context.Context, arg *InsertFriendParams) (*Friendship, error)
+	InsertMember(ctx context.Context, arg *InsertMemberParams) error
 	InsertMessage(ctx context.Context, arg *InsertMessageParams) error
 	InsertRoom(ctx context.Context, arg *InsertRoomParams) (*Room, error)
-	InsertRoomMember(ctx context.Context, arg *InsertRoomMemberParams) error
 	InsertSession(ctx context.Context, arg *InsertSessionParams) (*Session, error)
 	InsertUser(ctx context.Context, arg *InsertUserParams) (*User, error)
-	ListSessions(ctx context.Context, arg *ListSessionsParams) ([]*ListSessionsRow, error)
-	ListUserFriends(ctx context.Context, userID int64) ([]*ListUserFriendsRow, error)
-	ListUsers(ctx context.Context, arg *ListUsersParams) ([]*ListUsersRow, error)
 	RetrieveFriend(ctx context.Context, arg *RetrieveFriendParams) (*Friendship, error)
 	RetrieveFriendDetail(ctx context.Context, arg *RetrieveFriendDetailParams) (*RetrieveFriendDetailRow, error)
 	RetrieveFriendRooms(ctx context.Context, roomID int64) ([]*RetrieveFriendRoomsRow, error)
+	RetrieveMember(ctx context.Context, arg *RetrieveMemberParams) (*RoomMember, error)
+	RetrieveMembers(ctx context.Context, roomID int64) ([]*RetrieveMembersRow, error)
+	RetrieveMessages(ctx context.Context, arg *RetrieveMessagesParams) ([]*RetrieveMessagesRow, error)
+	RetrieveOwnerRoomIDs(ctx context.Context, userID int64) ([]int64, error)
+	RetrieveRoom(ctx context.Context, id int64) (*Room, error)
 	RetrieveSession(ctx context.Context, id uuid.UUID) (*Session, error)
+	RetrieveSessions(ctx context.Context, arg *RetrieveSessionsParams) ([]*RetrieveSessionsRow, error)
 	RetrieveUserByID(ctx context.Context, id int64) (*User, error)
 	RetrieveUserByName(ctx context.Context, username string) (*User, error)
+	RetrieveUserFriends(ctx context.Context, userID int64) ([]*RetrieveUserFriendsRow, error)
 	RetrieveUserRooms(ctx context.Context, memberID int64) ([]*RetrieveUserRoomsRow, error)
-	UpdateAddFriend(ctx context.Context, arg *UpdateAddFriendParams) (*Friendship, error)
-	UpdateFriend(ctx context.Context, arg *UpdateFriendParams) error
+	RetrieveUsers(ctx context.Context, arg *RetrieveUsersParams) ([]*RetrieveUsersRow, error)
+	UpdateFriend(ctx context.Context, arg *UpdateFriendParams) (*Friendship, error)
+	UpdateFriendStatus(ctx context.Context, arg *UpdateFriendStatusParams) error
+	UpdateRoom(ctx context.Context, arg *UpdateRoomParams) (*Room, error)
 	UpdateUser(ctx context.Context, arg *UpdateUserParams) (*User, error)
 }
 

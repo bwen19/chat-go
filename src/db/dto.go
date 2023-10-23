@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"gochat/src/db/sqlc"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type UserInfo struct {
@@ -40,13 +38,7 @@ func NewUserInfo(v *sqlc.User) *UserInfo {
 	}
 }
 
-type SessionInfo struct {
-	ID           uuid.UUID `json:"id"`
-	UserID       int64     `json:"user_id"`
-	RefreshToken string    `json:"refresh_token"`
-	ClientIp     string    `json:"client_ip"`
-	UserAgent    string    `json:"user_agent"`
-}
+type SessionInfo sqlc.Session
 
 func (s *SessionInfo) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, s)
@@ -57,13 +49,7 @@ func (s *SessionInfo) MarshalBinary() ([]byte, error) {
 }
 
 func NewSessionInfo(v *sqlc.Session) *SessionInfo {
-	return &SessionInfo{
-		ID:           v.ID,
-		UserID:       v.UserID,
-		RefreshToken: v.RefreshToken,
-		ClientIp:     v.ClientIp,
-		UserAgent:    v.UserAgent,
-	}
+	return (*SessionInfo)(v)
 }
 
 type FriendInfo struct {

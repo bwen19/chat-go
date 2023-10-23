@@ -20,18 +20,14 @@ type InitializeResponse struct {
 func (s *Server) initialize(ctx context.Context, client *hub.Client, req *InitializeRequest) error {
 	userID := client.GetUserID()
 
-	rooms, err := s.store.GetUserRooms(ctx, userID)
+	rooms, err := s.store.GetUserRooms(ctx, userID, req.EndTime)
 	if err != nil {
-		return ErrInternal
-	}
-
-	if err = s.store.GetRoomMessages(ctx, rooms, req.EndTime); err != nil {
-		return ErrInternal
+		return errInternal
 	}
 
 	friends, err := s.store.GetUserFriends(ctx, userID)
 	if err != nil {
-		return ErrInternal
+		return errInternal
 	}
 
 	s.hub.Register(client, rooms)
@@ -58,13 +54,15 @@ type SendMessageResponse struct {
 }
 
 func (s *Server) sendMessage(ctx context.Context, client *hub.Client, req *SendMessageRequest) error {
-	if ok := s.hub.IsUserInRoom(client, req.RoomID); !ok {
+	userID := client.GetUserID()
+
+	if ok := s.hub.IsUserInRoom(userID, req.RoomID); !ok {
 		return nil
 	}
 
-	user, err := s.store.GetUserByID(ctx, client.GetUserID())
+	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
-		return ErrInternal
+		return errInternal
 	}
 
 	message := &db.MessageInfo{
@@ -78,12 +76,12 @@ func (s *Server) sendMessage(ctx context.Context, client *hub.Client, req *SendM
 		SendAt:   time.Now(),
 	}
 	if err = s.store.CacheMessage(ctx, message); err != nil {
-		return ErrInternal
+		return errInternal
 	}
 
 	rsp := &SendMessageResponse{Message: message}
-	env := newWebsocketEvent("initialize", rsp)
-	s.hub.BroadcastToRoom(env, req.RoomID)
+	evt := newWebsocketEvent("send-message", rsp)
+	s.hub.BroadcastToRoom(evt, req.RoomID)
 
 	return nil
 }

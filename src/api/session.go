@@ -1,7 +1,7 @@
 package api
 
 import (
-	db "gochat/src/db/sqlc"
+	"gochat/src/db"
 	"gochat/src/util/token"
 	"net/http"
 	"time"
@@ -47,8 +47,8 @@ type ListSessionsRequest struct {
 	PageSize int32 `form:"page_size" binding:"required,min=5,max=10"`
 }
 type ListSessionsResponse struct {
-	Total    int64      `json:"total"`
-	Sessions []*Session `json:"sessions"`
+	Total    int64             `json:"total"`
+	Sessions []*db.SessionInfo `json:"sessions"`
 }
 
 func (s *Server) listSessions(ctx *gin.Context) {
@@ -60,7 +60,7 @@ func (s *Server) listSessions(ctx *gin.Context) {
 
 	authPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 
-	sessions, err := s.store.ListSessions(ctx, &db.ListSessionsParams{
+	total, sessions, err := s.store.ListSessions(ctx, &db.ListSessionsParams{
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 		UserID: authPayload.UserID,
@@ -70,27 +70,6 @@ func (s *Server) listSessions(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, convertListSessions(sessions))
-}
-
-func convertListSessions(sessions []*db.ListSessionsRow) *ListSessionsResponse {
-	if len(sessions) == 0 {
-		return &ListSessionsResponse{}
-	}
-
-	sess := make([]*Session, 0, 5)
-	for _, session := range sessions {
-		sess = append(sess, &Session{
-			ID:        session.ID,
-			ClientIp:  session.ClientIp,
-			UserAgent: session.UserAgent,
-			ExpireAt:  session.ExpireAt,
-			CreateAt:  session.CreateAt,
-		})
-	}
-
-	return &ListSessionsResponse{
-		Total:    sessions[0].Total,
-		Sessions: sess,
-	}
+	rsp := &ListSessionsResponse{Total: total, Sessions: sessions}
+	ctx.JSON(http.StatusOK, rsp)
 }

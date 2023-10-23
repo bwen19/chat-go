@@ -14,6 +14,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var (
+	ErrRedisNil       = redis.Nil
+	ErrRecordNotFound = pgx.ErrNoRows
+	ErrInvalidStatus  = errors.New("invalid friend status")
+)
+
 const (
 	RoleUser         = "user"
 	RoleAdmin        = "admin"
@@ -34,17 +40,10 @@ const (
 	personalRoomName  = "My Room"
 	privateRoomName   = "My Friend"
 	personalRoomCover = "/cover/personal"
-	privateCover      = "/cover/personal"
+	publicRoomCover   = "/cover/public"
+	privateRoomCover  = "/cover/personal"
 	defaultAvatar     = "/avatar/default"
-)
 
-var (
-	ErrRedisNil       = redis.Nil
-	ErrRecordNotFound = pgx.ErrNoRows
-	ErrInvalidStatus  = errors.New("invalid friend status")
-)
-
-const (
 	foreignKeyViolation = "23503"
 	uniqueViolation     = "23505"
 )

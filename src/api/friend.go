@@ -19,7 +19,7 @@ type AddFriendResponse struct {
 func (s *Server) addFriend(ctx context.Context, client *hub.Client, req *AddFriendRequest) error {
 	uFriend, fFriend, err := s.store.AddFriend(ctx, client.GetUserID(), req.FriendID)
 	if err != nil {
-		return errors.New("error adding friend")
+		return errors.New("error: add friend")
 	}
 
 	rsp := &AddFriendResponse{Friend: uFriend}
@@ -46,7 +46,7 @@ type AcceptFriendResponse struct {
 func (s *Server) acceptFriend(ctx context.Context, client *hub.Client, req *AcceptFriendRequest) error {
 	uFriend, uRoom, fFriend, fRoom, err := s.store.AcceptFriend(ctx, client.GetUserID(), req.FriendID)
 	if err != nil {
-		return errors.New("error accept friend")
+		return errors.New("error: accept friend")
 	}
 
 	s.hub.JoinRoom(uRoom.ID, uFriend.ID, fFriend.ID)
@@ -77,7 +77,7 @@ func (s *Server) refuseFriend(ctx context.Context, client *hub.Client, req *Refu
 
 	err := s.store.RefuseFriend(ctx, userID, friendID)
 	if err != nil {
-		return errors.New("error refuse friend")
+		return errors.New("error: refuse friend")
 	}
 
 	rsp := &RefuseFriendResponse{FriendID: friendID}
@@ -107,7 +107,7 @@ func (s *Server) deleteFriend(ctx context.Context, client *hub.Client, req *Dele
 
 	roomID, err := s.store.RemoveFriend(ctx, userID, friendID)
 	if err != nil {
-		return errors.New("error delete friend")
+		return errors.New("error: delete friend")
 	}
 
 	s.hub.LeaveRoom(roomID, userID, req.FriendID)

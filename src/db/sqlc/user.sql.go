@@ -12,39 +12,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteUser = `-- name: DeleteUser :many
+const deleteUser = `-- name: DeleteUser :one
 DELETE FROM users
 WHERE id = $1
 RETURNING room_id
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, id int64) ([]int64, error) {
-	rows, err := q.db.Query(ctx, deleteUser, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var room_id int64
-		if err := rows.Scan(&room_id); err != nil {
-			return nil, err
-		}
-		items = append(items, room_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) DeleteUser(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, deleteUser, id)
+	var room_id int64
+	err := row.Scan(&room_id)
+	return room_id, err
 }
 
 const insertUser = `-- name: InsertUser :one
 INSERT INTO users (
     username, hashed_password, nickname,
     avatar, role, room_id
-) VALUES (
+	)
+VALUES (
     $1, $2, $3, $4, $5, $6
-) RETURNING id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at
+	)
+RETURNING id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at
 `
 
 type InsertUserParams struct {
@@ -78,61 +67,6 @@ func (q *Queries) InsertUser(ctx context.Context, arg *InsertUserParams) (*User,
 		&i.CreateAt,
 	)
 	return &i, err
-}
-
-const listUsers = `-- name: ListUsers :many
-SELECT
-    id, username, avatar, nickname, role,
-    deleted, create_at, count(*) OVER() AS total
-FROM users
-ORDER BY id
-LIMIT $1
-OFFSET $2
-`
-
-type ListUsersParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type ListUsersRow struct {
-	ID       int64     `json:"id"`
-	Username string    `json:"username"`
-	Avatar   string    `json:"avatar"`
-	Nickname string    `json:"nickname"`
-	Role     string    `json:"role"`
-	Deleted  bool      `json:"deleted"`
-	CreateAt time.Time `json:"create_at"`
-	Total    int64     `json:"total"`
-}
-
-func (q *Queries) ListUsers(ctx context.Context, arg *ListUsersParams) ([]*ListUsersRow, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []*ListUsersRow{}
-	for rows.Next() {
-		var i ListUsersRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Username,
-			&i.Avatar,
-			&i.Nickname,
-			&i.Role,
-			&i.Deleted,
-			&i.CreateAt,
-			&i.Total,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, &i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const retrieveUserByID = `-- name: RetrieveUserByID :one
@@ -179,17 +113,76 @@ func (q *Queries) RetrieveUserByName(ctx context.Context, username string) (*Use
 	return &i, err
 }
 
+const retrieveUsers = `-- name: RetrieveUsers :many
+SELECT
+	id,
+	username,
+	avatar,
+	nickname,
+	role,
+	deleted,
+	create_at,
+	count(*) OVER() AS total
+FROM users
+ORDER BY id
+LIMIT $1 OFFSET $2
+`
+
+type RetrieveUsersParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type RetrieveUsersRow struct {
+	ID       int64     `json:"id"`
+	Username string    `json:"username"`
+	Avatar   string    `json:"avatar"`
+	Nickname string    `json:"nickname"`
+	Role     string    `json:"role"`
+	Deleted  bool      `json:"deleted"`
+	CreateAt time.Time `json:"create_at"`
+	Total    int64     `json:"total"`
+}
+
+func (q *Queries) RetrieveUsers(ctx context.Context, arg *RetrieveUsersParams) ([]*RetrieveUsersRow, error) {
+	rows, err := q.db.Query(ctx, retrieveUsers, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*RetrieveUsersRow{}
+	for rows.Next() {
+		var i RetrieveUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Avatar,
+			&i.Nickname,
+			&i.Role,
+			&i.Deleted,
+			&i.CreateAt,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET
-    username = COALESCE($1, username),
-    hashed_password = COALESCE($2, hashed_password),
-    avatar = COALESCE($3, avatar),
-    nickname = COALESCE($4, nickname),
-    role = COALESCE($5, role),
-    deleted = COALESCE($6, deleted)
-WHERE
-    id = $7
+	username = COALESCE($1, username),
+	hashed_password = COALESCE($2, hashed_password),
+	avatar = COALESCE($3, avatar),
+	nickname = COALESCE($4, nickname),
+	role = COALESCE($5, role),
+	deleted = COALESCE($6, deleted)
+WHERE id = $7
 RETURNING id, username, hashed_password, avatar, nickname, role, room_id, deleted, create_at
 `
 

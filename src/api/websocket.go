@@ -27,6 +27,15 @@ func (s *Server) handleWebsocket(ctx *gin.Context) {
 		return
 	}
 
+	session, err := s.store.GetSession(ctx, payload.ID)
+	if err != nil {
+		return
+	}
+
+	if session.UserID != payload.UserID || session.RefreshToken != req.Authorization {
+		return
+	}
+
 	user, err := s.store.GetUserByID(ctx, payload.UserID)
 	if err != nil {
 		return

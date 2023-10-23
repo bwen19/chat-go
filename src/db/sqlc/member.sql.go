@@ -7,11 +7,14 @@ package sqlc
 
 import (
 	"context"
+	"time"
 )
 
 const deleteMember = `-- name: DeleteMember :exec
 DELETE FROM room_members
-WHERE room_id = $1 AND member_id = $2
+WHERE
+  room_id = $1
+  AND member_id = $2
 `
 
 type DeleteMemberParams struct {
@@ -24,48 +27,184 @@ func (q *Queries) DeleteMember(ctx context.Context, arg *DeleteMemberParams) err
 	return err
 }
 
-const deleteMemberByRoom = `-- name: DeleteMemberByRoom :exec
+const deleteMembers = `-- name: DeleteMembers :many
+DELETE FROM room_members
+WHERE
+  room_id = $1::bigint
+  AND member_id = ANY($2::bigint[])
+  AND rank <> 'owner'
+RETURNING member_id
+`
+
+type DeleteMembersParams struct {
+	RoomID    int64   `json:"room_id"`
+	MemberIds []int64 `json:"member_ids"`
+}
+
+func (q *Queries) DeleteMembers(ctx context.Context, arg *DeleteMembersParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, deleteMembers, arg.RoomID, arg.MemberIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var member_id int64
+		if err := rows.Scan(&member_id); err != nil {
+			return nil, err
+		}
+		items = append(items, member_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteMembersByRoom = `-- name: DeleteMembersByRoom :exec
 DELETE FROM room_members
 WHERE room_id = $1
 `
 
-func (q *Queries) DeleteMemberByRoom(ctx context.Context, roomID int64) error {
-	_, err := q.db.Exec(ctx, deleteMemberByRoom, roomID)
+func (q *Queries) DeleteMembersByRoom(ctx context.Context, roomID int64) error {
+	_, err := q.db.Exec(ctx, deleteMembersByRoom, roomID)
 	return err
 }
 
-const deleteMemberByUser = `-- name: DeleteMemberByUser :exec
+const deleteMembersByUser = `-- name: DeleteMembersByUser :exec
 DELETE FROM room_members
 WHERE
     member_id = $1::bigint OR
     room_id = ANY($2::bigint[])
 `
 
-type DeleteMemberByUserParams struct {
+type DeleteMembersByUserParams struct {
 	UserID  int64   `json:"user_id"`
 	RoomIds []int64 `json:"room_ids"`
 }
 
-func (q *Queries) DeleteMemberByUser(ctx context.Context, arg *DeleteMemberByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteMemberByUser, arg.UserID, arg.RoomIds)
+func (q *Queries) DeleteMembersByUser(ctx context.Context, arg *DeleteMembersByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteMembersByUser, arg.UserID, arg.RoomIds)
 	return err
 }
 
-const insertRoomMember = `-- name: InsertRoomMember :exec
+const insertMember = `-- name: InsertMember :exec
 INSERT INTO room_members (
     room_id, member_id, rank
-) VALUES (
+  )
+VALUES (
     $1, $2, $3
-)
+  )
 `
 
-type InsertRoomMemberParams struct {
+type InsertMemberParams struct {
 	RoomID   int64  `json:"room_id"`
 	MemberID int64  `json:"member_id"`
 	Rank     string `json:"rank"`
 }
 
-func (q *Queries) InsertRoomMember(ctx context.Context, arg *InsertRoomMemberParams) error {
-	_, err := q.db.Exec(ctx, insertRoomMember, arg.RoomID, arg.MemberID, arg.Rank)
+func (q *Queries) InsertMember(ctx context.Context, arg *InsertMemberParams) error {
+	_, err := q.db.Exec(ctx, insertMember, arg.RoomID, arg.MemberID, arg.Rank)
 	return err
+}
+
+const retrieveMember = `-- name: RetrieveMember :one
+SELECT room_id, member_id, rank, join_at FROM room_members
+WHERE
+  room_id = $1
+  AND member_id = $2
+LIMIT 1
+`
+
+type RetrieveMemberParams struct {
+	RoomID   int64 `json:"room_id"`
+	MemberID int64 `json:"member_id"`
+}
+
+func (q *Queries) RetrieveMember(ctx context.Context, arg *RetrieveMemberParams) (*RoomMember, error) {
+	row := q.db.QueryRow(ctx, retrieveMember, arg.RoomID, arg.MemberID)
+	var i RoomMember
+	err := row.Scan(
+		&i.RoomID,
+		&i.MemberID,
+		&i.Rank,
+		&i.JoinAt,
+	)
+	return &i, err
+}
+
+const retrieveMembers = `-- name: RetrieveMembers :many
+SELECT
+  u.id,
+  u.nickname AS name,
+  u.avatar,
+  m.rank,
+  m.join_at
+FROM
+  room_members AS m
+  JOIN users AS u
+    ON m.member_id = u.id
+WHERE m.room_id = $1::bigint
+`
+
+type RetrieveMembersRow struct {
+	ID     int64     `json:"id"`
+	Name   string    `json:"name"`
+	Avatar string    `json:"avatar"`
+	Rank   string    `json:"rank"`
+	JoinAt time.Time `json:"join_at"`
+}
+
+func (q *Queries) RetrieveMembers(ctx context.Context, roomID int64) ([]*RetrieveMembersRow, error) {
+	rows, err := q.db.Query(ctx, retrieveMembers, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*RetrieveMembersRow{}
+	for rows.Next() {
+		var i RetrieveMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Avatar,
+			&i.Rank,
+			&i.JoinAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const retrieveOwnerRoomIDs = `-- name: RetrieveOwnerRoomIDs :many
+SELECT room_id
+FROM room_members
+WHERE
+  member_id = $1::bigint
+  AND rank = 'owner'
+`
+
+func (q *Queries) RetrieveOwnerRoomIDs(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, retrieveOwnerRoomIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var room_id int64
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

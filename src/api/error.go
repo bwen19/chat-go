@@ -9,34 +9,36 @@ import (
 )
 
 var (
-	ErrUnmarshal = errors.New("json parsing error")
-	ErrInternal  = errors.New("internal server error")
+	errArgument = errors.New("invalid argument")
+	errDenied   = errors.New("permission denied")
+	errInternal = errors.New("internal server error")
+	errNotFound = errors.New("not found")
 )
 
 func InvalidArgumentResponse(ctx *gin.Context) {
-	ctx.String(http.StatusBadRequest, "invalid argument")
+	ctx.String(http.StatusBadRequest, errArgument.Error())
 }
 
 func InternalErrorResponse(ctx *gin.Context) {
-	ctx.String(http.StatusInternalServerError, "internal server error")
+	ctx.String(http.StatusInternalServerError, errInternal.Error())
 }
 
 func PermissionDeniedResponse(ctx *gin.Context) {
-	ctx.String(http.StatusForbidden, "permission denied")
+	ctx.String(http.StatusForbidden, errDenied.Error())
 }
 
-func UniqueViolationResponse(ctx *gin.Context, err error) {
+func ViolationResponse(ctx *gin.Context, err error) {
 	if db.HasViolation(err) {
 		ctx.String(http.StatusForbidden, "already exists")
 		return
 	}
-	ctx.String(http.StatusInternalServerError, "internal database error")
+	ctx.String(http.StatusInternalServerError, errInternal.Error())
 }
 
-func RecordNotFoundResponse(ctx *gin.Context, err error) {
+func NotFoundResponse(ctx *gin.Context, err error) {
 	if errors.Is(err, db.ErrRecordNotFound) {
-		ctx.String(http.StatusNotFound, "not found")
+		ctx.String(http.StatusNotFound, errNotFound.Error())
 		return
 	}
-	ctx.String(http.StatusInternalServerError, "internal database error")
+	ctx.String(http.StatusInternalServerError, errInternal.Error())
 }

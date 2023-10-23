@@ -6,30 +6,6 @@ import (
 	"gochat/src/db/sqlc"
 )
 
-func (s *dbStore) GetUserFriends(ctx context.Context, userID int64) ([]*FriendInfo, error) {
-	rows, err := s.ListUserFriends(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	rsp := make([]*FriendInfo, 0, len(rows))
-	for _, row := range rows {
-		friend := &FriendInfo{
-			ID:       row.ID,
-			Username: row.Username,
-			Nickname: row.Nickname,
-			Avatar:   row.Avatar,
-			Status:   row.Status,
-			RoomID:   row.RoomID,
-			First:    row.First,
-			CreateAt: row.CreateAt,
-		}
-		rsp = append(rsp, friend)
-	}
-
-	return rsp, nil
-}
-
 func (s *dbStore) AddFriend(ctx context.Context, userID int64, friendID int64) (*FriendInfo, *FriendInfo, error) {
 	friend, err := s.RetrieveFriend(ctx, &sqlc.RetrieveFriendParams{
 		UserID:   userID,
@@ -47,9 +23,10 @@ func (s *dbStore) AddFriend(ctx context.Context, userID int64, friendID int64) (
 	}
 
 	if friend.Status == StatusDeleted {
-		friend, err = s.UpdateAddFriend(ctx, &sqlc.UpdateAddFriendParams{
+		friend, err = s.UpdateFriend(ctx, &sqlc.UpdateFriendParams{
 			UserID:   userID,
 			FriendID: friendID,
+			Status:   StatusAdding,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -77,7 +54,7 @@ func (s *dbStore) AcceptFriend(ctx context.Context, userID int64, friendID int64
 	}
 
 	err = s.execTx(ctx, func(q *sqlc.Queries) error {
-		err := s.UpdateFriend(ctx, &sqlc.UpdateFriendParams{
+		err := s.UpdateFriendStatus(ctx, &sqlc.UpdateFriendStatusParams{
 			Status:   StatusAccepted,
 			UserID:   friend.UserID,
 			FriendID: friend.FriendID,
@@ -86,7 +63,7 @@ func (s *dbStore) AcceptFriend(ctx context.Context, userID int64, friendID int64
 			return err
 		}
 
-		err = s.InsertRoomMember(ctx, &sqlc.InsertRoomMemberParams{
+		err = s.InsertMember(ctx, &sqlc.InsertMemberParams{
 			RoomID:   friend.RoomID,
 			MemberID: friend.UserID,
 			Rank:     RankMember,
@@ -95,7 +72,7 @@ func (s *dbStore) AcceptFriend(ctx context.Context, userID int64, friendID int64
 			return err
 		}
 
-		err = s.InsertRoomMember(ctx, &sqlc.InsertRoomMemberParams{
+		err = s.InsertMember(ctx, &sqlc.InsertMemberParams{
 			RoomID:   friend.RoomID,
 			MemberID: friend.FriendID,
 			Rank:     RankMember,
@@ -136,7 +113,7 @@ func (s *dbStore) RefuseFriend(ctx context.Context, userID int64, friendID int64
 		return ErrInvalidStatus
 	}
 
-	err = s.UpdateFriend(ctx, &sqlc.UpdateFriendParams{
+	err = s.UpdateFriendStatus(ctx, &sqlc.UpdateFriendStatusParams{
 		Status:   StatusDeleted,
 		UserID:   friend.UserID,
 		FriendID: friend.FriendID,
@@ -162,7 +139,7 @@ func (s *dbStore) RemoveFriend(ctx context.Context, userID int64, friendID int64
 	}
 
 	err = s.execTx(ctx, func(q *sqlc.Queries) error {
-		err := s.UpdateFriend(ctx, &sqlc.UpdateFriendParams{
+		err := s.UpdateFriendStatus(ctx, &sqlc.UpdateFriendStatusParams{
 			Status:   StatusDeleted,
 			UserID:   friend.UserID,
 			FriendID: friend.FriendID,
@@ -171,7 +148,7 @@ func (s *dbStore) RemoveFriend(ctx context.Context, userID int64, friendID int64
 			return err
 		}
 
-		if err = s.DeleteMemberByRoom(ctx, friend.RoomID); err != nil {
+		if err = s.DeleteMembersByRoom(ctx, friend.RoomID); err != nil {
 			return err
 		}
 
@@ -224,7 +201,7 @@ func (s *dbStore) getFriendRooms(ctx context.Context, friend *sqlc.Friendship) (
 	}
 
 	var uRoom, fRoom *RoomInfo
-	members := make([]*MemberInfo, 2)
+	members := make([]*MemberInfo, 0, 2)
 	for _, v := range vals {
 		m := &MemberInfo{
 			ID:     v.MemberID,
@@ -265,7 +242,7 @@ func (s *dbStore) createFriend(ctx context.Context, userID int64, friendID int64
 	err := s.execTx(ctx, func(q *sqlc.Queries) error {
 		room, err := q.InsertRoom(ctx, &sqlc.InsertRoomParams{
 			Name:     privateRoomName,
-			Cover:    privateCover,
+			Cover:    privateRoomCover,
 			Category: CategoryPrivate,
 		})
 		if err != nil {
